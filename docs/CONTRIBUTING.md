@@ -2,13 +2,42 @@
 
 感谢你愿意为这个清单出力。为了让仓库长期保持可用，请先读完「收录边界」一节 —— 这是最容易出问题的地方。
 
+## 目录约定
+
+根目录只有两个 md：**`README.md`（英文主版）与 `README.zh.md`（中文副版）**，让读者一眼看到入口。其余文档统一收在 `docs/`（本文件与 `MAINTENANCE.md`），分组视图在 `views/`。
+
 ## 只改一个文件
 
 **所有内容修改都只发生在 `data/papers.yaml`。**
 
-`README.md`、`papers_by_section/`、`papers_by_surface/` 全部是 GitHub Actions 的自动生成产物，直接编辑它们会在下次构建时被覆盖。
+`README.md`、`README.zh.md`、`views/` 下所有文件全部是 GitHub Actions 的自动生成产物，直接编辑它们会在下次构建时被覆盖。
 
-章节结构调整改 `data/sections.yaml`。
+章节结构调整改 `data/sections.yaml`（每节需同时维护中文 `title`/`desc` 与英文 `title_en`/`desc_en`）。
+
+## 条目格式（双语）
+
+每篇条目必须同时提供两个简介字段：
+
+- **`summary`（英文）** —— 英文主版 README 用，2-4 句、含动机/机制/关键数字
+- **`summary_zh`（中文）** —— 中文副版 README 用，150-300 字，保留英文专名
+
+```yaml
+  - id: "2608.09225"                    # arXiv ID，不带版本号
+    title: "官方完整标题"                 # 必须与 arXiv 返回的标题精确一致
+    abbr: "方法缩写"                      # 可选
+    date: "2026-08"                      # arXiv v1 提交年月，不是 v2/v3
+    venue: "arXiv"                       # 或 NDSS 2026 / CCS 2025 / OSDI 2026 等
+    section: "1.1"                       # 叶子小节 ID，见 data/sections.yaml
+    boundary: [cross-tenant, cross-request]   # 信任边界，可多选
+    summary: >-
+      English summary, 2-4 sentences. Motivation + mechanism + key numbers.
+      Use specific figures ("ASR rose 7.4% to 64.9%"), not vague claims.
+    summary_zh: >-
+      中文简介，2-4 句、150-300 字，须含动机 / 机制 / 关键数字。
+    code: "https://github.com/..."       # 可选
+```
+
+非 arXiv 来源（会议论文无预印本、CVE、厂商公告、官方文档）用 `url` 字段替代 `id`。
 
 ## 收录边界
 
@@ -49,29 +78,6 @@
 
 **提交 PR，并在描述里说明你的判断理由。** 边界情况由维护者定夺，但请不要因为拿不准就默默不提 —— 漏收比误收更难发现。
 
-## 条目格式
-
-```yaml
-  - id: "2608.09225"                    # arXiv ID，不带版本号
-    title: "官方完整标题"                 # 必须与 arXiv 返回的标题精确一致
-    abbr: "方法缩写"                      # 可选
-    date: "2026-08"                      # arXiv v1 提交年月，不是 v2/v3
-    venue: "arXiv"                       # 或 NDSS 2026 / CCS 2025 / OSDI 2026 等
-    section: "1.1"                       # 叶子小节 ID，见 data/sections.yaml
-    boundary: [cross-tenant, cross-request]   # 信任边界，可多选
-    summary: >-
-      中文简介，2-4 句、150-300 字，须含动机 / 机制 / 关键数字。
-    code: "https://github.com/..."       # 可选
-```
-
-非 arXiv 来源（会议论文无预印本、CVE、厂商公告、官方文档）用 `url` 字段替代 `id`：
-
-```yaml
-  - url: "https://www.ndss-symposium.org/ndss-paper/..."
-    title: "..."
-    venue: "NDSS 2025"
-```
-
 ### 几条硬性要求
 
 **标题必须与 arXiv 返回值精确一致。** CI 会做标题相似度比对（阈值 0.92）并叠加长度差检查。不要手动截短标题 —— 建仓时就因为漏掉副标题被 CI 拦下过一次。
@@ -80,9 +86,9 @@
 
 **简介要有具体数字。** 写「攻击成功率从 7.4% 抬升到 64.9%」，而不是「效果显著」。关键数字是读者判断一篇工作值不值得读的主要依据。
 
-**簡介写动机、机制、结论三件事。** 不要只翻译摘要第一句。
+**简介写动机、机制、结论三件事。** 不要只翻译摘要第一句。
 
-**信任边界要标全。** 一篇工作跨越多层边界就都标上 —— 这个字段决定了它出现在哪些 `papers_by_surface/` 视图里，也决定了交叉矩阵的准确性。
+**信任边界要标全。** 一篇工作跨越多层边界就都标上 —— 这个字段决定了它出现在哪些 `views/by-boundary/` 视图里，也决定了交叉矩阵的准确性。
 
 ## 本地验证
 

@@ -46,6 +46,7 @@ AI Infra Security 的检索噪音比 GUI Agent 安全大一个量级。实测同
 ≥80% 判据通过，确认 260 是真实体量而非 query 缺陷。
 """
 import argparse
+import json
 import re
 import sys
 import time
@@ -114,13 +115,15 @@ def build_query(section_queries, section_id, loose=False):
 
 
 def fetch(query, start, end, max_results=100, count_only=False):
+    """单次请求。max_results 上限 200，超出由 fetch_paged 翻页。"""
     sq = f"({query}) AND submittedDate:[{start}0000 TO {end}2359]"
     params = {
         "search_query": sq, "start": 0,
-        "max_results": 1 if count_only else max_results,
+        "max_results": 1 if count_only else min(max_results, 200),
         "sortBy": "submittedDate", "sortOrder": "descending",
     }
     url = API + "?" + urllib.parse.urlencode(params)
+    raw = None
     for attempt in range(3):
         try:
             raw = urllib.request.urlopen(url, timeout=90).read().decode()
@@ -129,14 +132,55 @@ def fetch(query, start, end, max_results=100, count_only=False):
             if attempt == 2:
                 return -1, []
             time.sleep(8)
-    else:
+    if raw is None:
         return -1, []
 
     m = re.search(r"opensearch:totalResults[^>]*>(\d+)<", raw)
     total = int(m.group(1)) if m else -1
     if count_only:
         return total, []
+    return total, parse_entries(raw)
 
+
+def fetch_paged(query, start, end, cap=600):
+    """翻页拉满全部条目。总存量超 200 的节必须走这个，否则会静默截断。"""
+    all_items, seen = [], set()
+    start_idx = 0
+    while start_idx < cap:
+        sq = f"({query}) AND submittedDate:[{start}0000 TO {end}2359]"
+        params = {
+            "search_query": sq, "start": start_idx, "max_results": 200,
+            "sortBy": "submittedDate", "sortOrder": "descending",
+        }
+        url = API + "?" + urllib.parse.urlencode(params)
+        raw = None
+        for attempt in range(3):
+            try:
+                raw = urllib.request.urlopen(url, timeout=90).read().decode()
+                break
+            except Exception:
+                if attempt == 2:
+                    return all_items
+                time.sleep(8)
+        if raw is None:
+            return all_items
+        m = re.search(r"opensearch:totalResults[^>]*>(\d+)<", raw)
+        total = int(m.group(1)) if m else 0
+        batch = parse_entries(raw)
+        if not batch:
+            break
+        for it in batch:
+            if it["id"] not in seen:
+                seen.add(it["id"])
+                all_items.append(it)
+        start_idx += len(batch)
+        if start_idx >= total:
+            break
+        time.sleep(SLEEP)
+    return all_items
+
+
+def parse_entries(raw):
     out = []
     for e in re.findall(r"<entry>(.*?)</entry>", raw, re.S):
         aid = re.search(r"<id>http://arxiv\.org/abs/([\d.]+)", e)
@@ -153,7 +197,7 @@ def fetch(query, start, end, max_results=100, count_only=False):
             "cat": c.group(1) if c else "?",
             "summary": " ".join(s.group(1).split()) if s else "",
         })
-    return total, out
+    return out
 
 
 def existing_ids():
@@ -171,6 +215,7 @@ def main():
     ap.add_argument("--section", help="只查某节，如 2.1")
     ap.add_argument("--count", action="store_true", help="只统计数量，不列条目")
     ap.add_argument("--loose", action="store_true", help="不限主分类（放宽口径）")
+    ap.add_argument("--out", help="导出完整候选（含完整摘要）到 JSON 文件，供批量撰写条目")
     args = ap.parse_args()
 
     start = args.start.replace("-", "")
@@ -198,12 +243,27 @@ def main():
 
     seen = set()
     grand = 0
+    exported = []
     for sid, title, queries in nodes:
         if not queries:
             print(f"\n[{sid}] {title} —— 无 arXiv 检索词（非 arXiv 来源章节，跳过）")
             continue
 
         q = build_query(queries, sid, args.loose)
+        if args.out:
+            # 导出模式：翻页拉满，每篇记录候选所属节（同一篇可属多节，归第一个命中的）
+            items = fetch_paged(q, start, end)
+            total = len(items)
+            grand += total
+            fresh = [i for i in items if i["id"] not in known and i["id"] not in seen]
+            for i in fresh:
+                seen.add(i["id"])
+                i["section_hint"] = sid
+                exported.append(i)
+            print(f"[{sid}] {title}　召回 {total}，去重后新增 {len(fresh)}")
+            time.sleep(SLEEP)
+            continue
+
         total, items = fetch(q, start, end, count_only=args.count)
         grand += max(total, 0)
 
@@ -222,6 +282,12 @@ def main():
 
     print("\n" + "=" * 78)
     print(f"合计召回 {grand} 篇（含跨节重叠），去重后待筛 {len(seen)} 篇")
+    if args.out:
+        Path(args.out).write_text(json.dumps(exported, ensure_ascii=False, indent=1),
+                                  encoding="utf-8")
+        print(f"✓ 已导出 {len(exported)} 篇（含完整摘要）到 {args.out}")
+        print("  每篇带 section_hint 字段标记首个命中节；跨节重叠的归第一个节。")
+        return
     print()
     print("⚠️  人工筛选环节不可省。GUI 库那轮实测：9 篇召回全部命中形态词，")
     print("    但近半不属收录范围。本方向噪音更大，务必逐条核对三条收录边界：")

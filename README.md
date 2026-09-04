@@ -1,275 +1,465 @@
 # Awesome-AI-Infra-Security
 
-> AI Infra 安全论文清单 —— LLM 推理与训练基础设施的攻击面、信任边界与防御，每篇附中文简介
+**[English](README.md)** ｜ [中文](README.zh.md)
 
-![Last Update](https://img.shields.io/badge/last%20update-2026.09-brightgreen) ![Papers](https://img.shields.io/badge/papers-20%2B-blue) ![Time Range](https://img.shields.io/badge/time-2025.01--2026.09-orange) [![Link Check](https://github.com/Yuxuan2003/Awesome-AI-Infra-Security/actions/workflows/check.yml/badge.svg)](https://github.com/Yuxuan2003/Awesome-AI-Infra-Security/actions/workflows/check.yml) ![Awesome](https://img.shields.io/badge/-awesome-ff69b4)
+> A curated list of AI infrastructure security papers — attack surfaces, trust boundaries and defenses across the LLM inference & training stack, with an English summary for each entry.
 
-## 为什么需要这个清单
+![Last Update](https://img.shields.io/badge/last%20update-2026.09-brightgreen) ![Papers](https://img.shields.io/badge/papers-60%2B-blue) ![Time Range](https://img.shields.io/badge/time-2025.01--2026.09-orange) [![Link Check](https://github.com/Yuxuan2003/Awesome-AI-Infra-Security/actions/workflows/check.yml/badge.svg)](https://github.com/Yuxuan2003/Awesome-AI-Infra-Security/actions/workflows/check.yml) ![Awesome](https://img.shields.io/badge/-awesome-ff69b4)
 
-AI Infra 最大的特殊性是：**用户输入的语义，会直接决定底层计算拓扑、缓存状态、GPU 内存占用、调度行为和网络通信。**
+## Why this list
 
-普通 Web / Cloud 里，request content 与底层 resource state 通常相对解耦。但在 LLM Infra 里，一段 prompt 会同时影响 KV 分配、prefix 命中、batch 组成、抢占行为、MoE 专家路由与 GPU 间通信 —— 也就是说，**输入不仅控制模型输出，还间接控制基础设施状态**。于是攻击者可以通过完全合法的 API 请求去操纵系统。
+What makes AI infrastructure distinctive: **the semantics of user input directly determines the underlying compute topology, cache state, GPU memory footprint, scheduling behavior and network traffic.**
 
-由此产生了一批传统系统安全分类学难以归置的问题：
+In a conventional web/cloud stack, request content is largely decoupled from low-level resource state. In LLM infra, a single prompt simultaneously shapes KV allocation, prefix-cache hits, batch composition, preemption, MoE expert routing and inter-GPU communication — **input controls not only the model's output but the state of the infrastructure itself.** An attacker can therefore manipulate the system through perfectly legitimate API requests.
 
-- 性能优化直接变成隐私侧信道（KV prefix 共享 → 跨租户 prompt 推断）
-- 模型语义决定物理执行路径（MoE routing → GPU/NIC 负载 → 可观测侧信道）
-- 攻击目标从算力转向状态机（少量请求操纵调度器，而非压垮 GPU）
-- 部署优化悄悄改变模型安全性（量化后 perplexity 不变但拒答行为崩塌）
-- 本地损坏放大为全局污染（单个 rank 的错误张量经 collective 写入 checkpoint）
+This produces a class of problems that conventional system-security taxonomies struggle to place:
 
-## 这个仓库收录什么
+- Performance optimizations become privacy side channels (KV prefix sharing → cross-tenant prompt inference)
+- Model semantics determine physical execution paths (MoE routing → GPU/NIC load → observable side channels)
+- Attack targets shift from compute to state machines (a few requests manipulate the scheduler instead of saturating GPUs)
+- Deployment optimizations quietly change model safety (perplexity unchanged after quantization, but refusals collapse)
+- Local corruption amplifies into global pollution (one rank's faulty tensor propagates through collectives into the checkpoint)
 
-只收录**以 LLM 推理 / 训练基础设施本身为主要研究对象**的安全工作，按「攻击面 × 信任边界」二维组织。
+## What this list covers
 
-**不收录**（三条最容易失守的边界）：
+Only work whose **primary object of study is the LLM inference / training infrastructure itself**, organized along two axes: *attack surface × trust boundary*.
 
-1. **用 AI 做安全工作**（AI-for-Security）—— 如「用 MoE 做恶意软件分类」、渗透测试、漏洞挖掘。本仓库只收 Security-of-AI
-2. **纯模型层工作** —— 必须涉及 serving / training 系统的状态、资源或拓扑。只在模型权重与输出层面讨论对齐的研究不收
-3. **换个部署环境重跑的通用越狱** —— 攻击或防御的作用点必须在基础设施上
+**Not covered** (the three boundaries that fail most often):
 
-## 为什么按「攻击面 × 信任边界」而不按主题标签组织
+1. **AI-for-Security** — e.g. using an MoE for malware classification, penetration testing, vulnerability discovery. This list is Security-of-AI only.
+2. **Pure model-layer work** — the paper must engage the state, resources or topology of a serving/training system. Alignment work that only touches weights and outputs does not qualify.
+3. **Generic jailbreaks re-run in a new deployment setting** — the attack or defense must act on the infrastructure itself.
 
-现有的 LLM 安全大盘清单大多按投稿主题贴扁平标签（jailbreak / privacy / watermark …），结果是 infra 层的工作被打散：KV cache 侧信道与网络流量指纹因为同属 side-channel 而被放进同一节，而它们的攻击者能力、防御位置和受影响的系统组件完全不同。
+## Why organize by attack surface × trust boundary, not topic tags
 
-本仓库以**攻击面**（系统栈上的位置：KV / scheduler / routing / interconnect / 训练 collective）为一级维度，以**信任边界**（跨租户 / 跨请求 / 主机-设备 / 节点间 / 供应链 / 模型内部）为交叉标签。
+Existing large LLM-safety lists tag entries by submission topic (jailbreak / privacy / watermark …). Infra-layer work ends up scattered: a KV-cache side channel and a network-traffic fingerprint share the same side-channel section even though the attacker's capability, the defense location and the affected system components are entirely different.
 
-这样做的理由是：同一个攻击面在不同信任边界下的严重性完全不同。KV 泄露在单租户自部署里几乎无害，在多租户 serving 里是重大隐私事故。只有同时标注这两个维度，读者才能判断一篇工作是否与自己的部署形态相关。
+This list takes the **attack surface** (where in the system stack: KV / scheduler / routing / interconnect / training collectives) as the primary axis, and the **trust boundary** (cross-tenant / cross-request / host-device / inter-node / supply-chain / model-internal) as a cross-cutting tag.
 
-### 攻击面 × 信任边界 分布
+The reason: the same attack surface has very different severity at different trust boundaries. KV leakage is nearly harmless in single-tenant self-hosting but a serious privacy incident in multi-tenant serving. Only by labelling both dimensions can a reader tell whether a paper is relevant to their own deployment.
 
-| 攻击面 \ 信任边界 | 跨租户 | 跨请求 | 主机-设备 | 节点间 | 供应链 | 模型内部 |
+### Attack surface × trust boundary distribution
+
+| Attack surface \ Trust boundary | Cross-tenant | Cross-request | Host–device | Inter-node | Supply chain | Model-internal |
 |---|---|---|---|---|---|---|
-| **0 威胁模型与综述** | · | · | · | · | · | · |
-| **1 AI State Plane 安全** | 6 | 3 | 1 | 1 | 1 | · |
-| **2 Semantic-to-Resource 攻击面** | 3 | · | 1 | 1 | · | 3 |
-| **3 Infra 优化引发的 Safety 漂移** | · | · | · | · | 1 | 4 |
-| **4 训练侧完整性** | · | · | · | 2 | 1 | · |
-| **5 硬件与执行环境** | · | · | 2 | · | 1 | · |
-| **6 防御与系统机制** | 1 | · | 1 | · | · | 1 |
+| **0 Threat Models & Surveys** | · | · | 1 | · | · | 1 |
+| **1 AI State Plane Security** | 21 | 7 | 5 | 5 | 2 | 2 |
+| **2 Semantic-to-Resource Attack Surface** | 5 | · | 1 | 1 | · | 3 |
+| **3 Infra Optimization Induces Safety Drift** | 1 | · | · | · | 2 | 8 |
+| **4 Training-Side Integrity** | · | · | · | 2 | 1 | · |
+| **5 Hardware & Execution Environment** | · | · | 3 | · | 1 | · |
+| **6 Defenses & System Mechanisms** | 2 | 1 | 4 | 1 | · | 2 |
 
-## 目录
+## Contents
 
-- [0 威胁模型与综述](#0-威胁模型与综述)
-- [1 AI State Plane 安全](#1-ai-state-plane-安全)
-  - [1.1 KV / Prefix Cache 侧信道与泄露](#11-kv-prefix-cache-侧信道与泄露)
-  - [1.2 Activation / Embedding 状态泄露](#12-activation-embedding-状态泄露)
-  - [1.3 解耦推理与 KV 跨节点搬运](#13-解耦推理与-kv-跨节点搬运)
-  - [1.4 缓存一致性与语义缓存](#14-缓存一致性与语义缓存)
-- [2 Semantic-to-Resource 攻击面](#2-semantic-to-resource-攻击面)
-  - [2.1 Scheduler 状态操纵与延迟 DoS](#21-scheduler-状态操纵与延迟-dos)
-  - [2.2 MoE 路由侧信道](#22-moe-路由侧信道)
-  - [2.3 MoE 路由操纵与 Safety 削弱](#23-moe-路由操纵与-safety-削弱)
-  - [2.4 专家并行通信与负载劫持](#24-专家并行通信与负载劫持)
-- [3 Infra 优化引发的 Safety 漂移](#3-infra-优化引发的-safety-漂移)
-- [4 训练侧完整性](#4-训练侧完整性)
-- [5 硬件与执行环境](#5-硬件与执行环境)
-- [6 防御与系统机制](#6-防御与系统机制)
-- [7 工程侧安全（非 arXiv 来源）](#7-工程侧安全非-arxiv-来源)
+- [0 Threat Models & Surveys](#0-threat-models-surveys)
+- [1 AI State Plane Security](#1-ai-state-plane-security)
+  - [1.1 KV / Prefix Cache Side Channels & Leakage](#11-kv-prefix-cache-side-channels-leakage)
+  - [1.2 Activation / Embedding State Leakage](#12-activation-embedding-state-leakage)
+  - [1.3 Disaggregated Inference & Cross-Node KV Transfer](#13-disaggregated-inference-cross-node-kv-transfer)
+  - [1.4 Cache Coherence & Semantic Cache](#14-cache-coherence-semantic-cache)
+- [2 Semantic-to-Resource Attack Surface](#2-semantic-to-resource-attack-surface)
+  - [2.1 Scheduler Manipulation & Latency DoS](#21-scheduler-manipulation-latency-dos)
+  - [2.2 MoE Routing Side Channels](#22-moe-routing-side-channels)
+  - [2.3 MoE Routing Manipulation & Safety Degradation](#23-moe-routing-manipulation-safety-degradation)
+  - [2.4 Expert-Parallel Communication & Load Hijacking](#24-expert-parallel-communication-load-hijacking)
+- [3 Infra Optimization Induces Safety Drift](#3-infra-optimization-induces-safety-drift)
+- [4 Training-Side Integrity](#4-training-side-integrity)
+- [5 Hardware & Execution Environment](#5-hardware-execution-environment)
+- [6 Defenses & System Mechanisms](#6-defenses-system-mechanisms)
+- [7 Engineering-Side Security (non-arXiv)](#7-engineering-side-security-non-arxiv)
 
-按信任边界浏览：[跨租户](papers_by_surface/cross-tenant.md) ｜ [跨请求](papers_by_surface/cross-request.md) ｜ [主机-设备](papers_by_surface/host-device.md) ｜ [节点间](papers_by_surface/inter-node.md) ｜ [供应链](papers_by_surface/supply-chain.md) ｜ [模型内部](papers_by_surface/model-internal.md)
+Browse by trust boundary: [Cross-tenant](views/by-boundary/cross-tenant.md) ｜ [Cross-request](views/by-boundary/cross-request.md) ｜ [Host–device](views/by-boundary/host-device.md) ｜ [Inter-node](views/by-boundary/inter-node.md) ｜ [Supply chain](views/by-boundary/supply-chain.md) ｜ [Model-internal](views/by-boundary/model-internal.md)
 
 ---
 
-## 0 威胁模型与综述
+## 0 Threat Models & Surveys
 
-*领域综述、SoK，以及「攻击面 × 信任边界」对照表。 本章负责回答「AI Infra 的安全边界和传统 Web/Cloud 有何本质不同」。*
+*Field surveys, SoK, and attack-surface × trust-boundary frameworks. This section answers what fundamentally distinguishes AI-infra security boundaries from conventional web/cloud.*
 
-*本节暂无收录条目*（arXiv 存量约 48 篇待整理，欢迎 PR）
+#### Can Transformer Memory Be Corrupted? Investigating Cache-Side Vulnerabilities in Large Language Models (MTI) (2025-10)
+- **Summary**: Treats the inference-time KV cache as an overlooked integrity attack surface even when prompts and weights are secured. The MTI framework perturbs cached key vectors via noise, zeroing, and rotations; on GPT-2 and LLaMA-2-7B it shifts next-token distributions and destabilizes RAG/agent pipelines.
+- **Trust boundary**: Host–device, Model-internal
+- **arXiv**: [2510.17098](https://arxiv.org/abs/2510.17098)
 
-## 1 AI State Plane 安全
+## 1 AI State Plane Security
 
-*传统系统只有 Control Plane 与 Data Plane，LLM serving 多出了一层 「AI State Plane」—— KV、activation、embedding、expert routing、adapter、 speculative state 在机器之间流动。这些中间状态携带用户输入的信息， 却在多数 infra 设计中首先被当作 performance object 而非 tenant security boundary。*
+*Conventional systems have only a Control Plane and a Data Plane; LLM serving adds an AI State Plane — KV, activations, embeddings, expert routing, adapter and speculative state flowing between machines. These intermediate states carry user input, yet most infra designs treat them first as performance objects, not tenant security boundaries.*
 
-### 1.1 KV / Prefix Cache 侧信道与泄露
+### 1.1 KV / Prefix Cache Side Channels & Leakage
 
-*prefix 复用带来的 timing channel、跨租户 prompt 推断、cache 命中探测*
+*Timing channels from prefix reuse, cross-tenant prompt inference, cache-hit probing.*
 
 #### Uncovering and Understanding Hidden Dependencies in the LLM API Reseller Ecosystem via Prefix-Cache Side Channels (Reseller Probing) (2026-08)
-- **简介**：LLM API 转售商已成为访问模型服务的重要一层，但多级转售让供应链变得不透明： 用户的请求可能经过若干未披露的上游。本文把 prefix-cache 侧信道用作探针， 通过构造探测 prompt 并观测缓存命中特征，反推出转售商背后的真实上游依赖关系。 这是一个把 infra 侧信道用于生态测绘的有趣转向 —— 侧信道不止能偷 prompt， 还能揭示服务提供方刻意隐藏的拓扑结构，对合规与数据流向审计都有直接意义。
-- **信任边界**：跨租户、供应链
-- **arXiv**：[2608.20732](https://arxiv.org/abs/2608.20732)
+- **Summary**: Multi-level LLM API reselling hides the supply chain: requests may traverse undisclosed upstreams. This work uses the prefix-cache side channel as a probe, recovering resellers' hidden upstream dependencies from cache-hit signatures of crafted prompts—useful for compliance and data-flow auditing.
+- **Trust boundary**: Cross-tenant, Supply chain
+- **arXiv**: [2608.20732](https://arxiv.org/abs/2608.20732)
 
 #### Governing the KV Cache: Preventing Timing Side-Channel Leakage in Multi-Tenant LLM Inference (KV Governance) (2026-08)
-- **简介**：KV cache 是现代 LLM 推理最主要的吞吐优化手段，它让 prefix 可以跨请求复用； 但在多租户部署下这份缓存是共享的，命中与否会体现在首 token 时延上， 于是纯粹的性能优化直接变成了隐私侧信道。本文系统刻画了 vLLM 与 SGLang 中 prefix 复用带来的 timing channel，并给出缓存治理层面的防御设计， 在保留大部分复用收益的同时切断攻击者据时延差异探测他人缓存内容的能力。
-- **信任边界**：跨租户、跨请求
-- **arXiv**：[2608.09225](https://arxiv.org/abs/2608.09225)
+- **Summary**: KV-cache prefix reuse is LLM serving's key throughput optimization, but under multi-tenancy cache hits leak via first-token latency. This work characterizes the timing channel in vLLM and SGLang and designs cache-governance defenses keeping most reuse gains while blocking cross-tenant probing.
+- **Trust boundary**: Cross-tenant, Cross-request
+- **arXiv**: [2608.09225](https://arxiv.org/abs/2608.09225)
+
+#### Efficient and Privacy Aware Edge Cloud Collaborative Inference for Large Language Models (2026-07)
+- **Summary**: Cloud LLM inference exposes user prompts, while on-device inference is infeasible for most edge hardware. This framework splits inference on endpoint-authenticated KV cache: endpoints handle embedding, KV cache authentication and speculative drafting, the cloud runs authenticated decoder inference, and all transmitted data is quantized and AES-GCM encrypted with cache access policies kept local. It cuts per-token latency by up to 46.1% and downlink payloads by up to 67.4% over baseline split inference.
+- **Trust boundary**: Inter-node
+- **arXiv**: [2607.13093](https://arxiv.org/abs/2607.13093)
+
+#### Agent-Assisted Side-Channel Attacks on Non-Prefix KV Cache in RAG (2026-06)
+- **Summary**: Existing KV cache side channels require strict prefix alignment and fail on RAG queries with private prefixes. SpliceLeak exploits the deterministic "Step-Wave" timing signature of chunk-aware non-prefix KV cache fusion in vLLM+LMCache, fingerprinting hidden prompt lengths and extracting content token-by-token with up to 100% success, needing as few as 63 requests per token. The SpliceDefense mitigation (QCP + CTBF) flattens the signal (Delta TTFT ~ 0).
+- **Trust boundary**: Cross-tenant
+- **arXiv**: [2606.21842](https://arxiv.org/abs/2606.21842)
+
+#### OTRO: Oblivious Tokenization Path with Square-Root ORAM (OTRO) (2026-06)
+- **Summary**: CPU-side tokenizers in TEE-based LLM serving leak prompts via table-lookup memory access patterns, with end-to-end prompt recovery shown on production Intel TDX. Tree-based ORAM fixes incur ~13x tokenizer slowdown. OTRO uses square-root ORAM with replica pools, epoch-based rotation with dummy-access padding, and KV-cache-aware chunked tokenization, limiting TTFT overhead to at most 4.5% with under 0.5 GB extra memory.
+- **Trust boundary**: Cross-tenant, Host–device
+- **arXiv**: [2606.17358](https://arxiv.org/abs/2606.17358)
+
+#### CacheProbe: Auditing Prompt Cache Isolation in Gateway APIs (CacheProbe) (2026-05)
+- **Summary**: Prompt caching reuses KV cache across requests, but many implementations are vulnerable to timing attacks or metadata disclosure. Building on Gu et al. (ICML 2025), this paper audits whether OpenRouter's API gateway architecture undermines provider-level per-account prompt cache isolation: routing through OpenRouter with shared organizational credentials risks creating global cache sharing across all OpenRouter users.
+- **Trust boundary**: Cross-tenant
+- **arXiv**: [2605.30613](https://arxiv.org/abs/2605.30613)
+
+#### CachePrune: Privacy-Aware and Fine-Grained KV Cache Sharing for Efficient LLM Inference (CachePrune) (2026-05)
+- **Summary**: Unrestricted cross-user KV cache sharing lets adversaries infer user inputs via cache-reuse probing; disabling sharing entirely wastes reuse of privacy-irrelevant segments. CachePrune enables token-level, privacy-aware KV sharing with sensitivity masking, deriving reusable variable-length segments and retrieving them efficiently. Implemented on vLLM over three datasets, it eliminates direct leakage through reuse side channels while reducing TTFT by 4.5x and raising hit rates by 44%.
+- **Trust boundary**: Cross-tenant
+- **arXiv**: [2605.23640](https://arxiv.org/abs/2605.23640)
+
+#### Continuous Discovery of Vulnerabilities in LLM Serving Systems with Fuzzing (2026-05)
+- **Summary**: Serving-layer failures emerge only under concurrent workloads and evade standard model and API tests. GRIEF, a greybox fuzzer for LLM inference engines, treats timed multi-request traces as first-class inputs and uses controlled replay with log-probability checks to confirm reproducible failures. Early campaigns on vLLM and SGLang found 15 vulnerabilities (10 developer-confirmed, 2 CVEs), spanning KV-cache isolation failures, cross-request interference, and silent output corruption.
+- **Trust boundary**: Cross-tenant, Cross-request
+- **arXiv**: [2605.11202](https://arxiv.org/abs/2605.11202)
+
+#### Bit-Flip Vulnerability of Shared KV-Cache Blocks in LLM Serving Systems (2026-04)
+- **Summary**: Shared prefix-caching blocks in vLLM exist as a single physical copy without integrity protection, a Rowhammer-analogous target. Software fault injection shows: 13 of 16 BF16 bit positions yield silent divergence (coherent but altered outputs); only requests sharing the prefix are affected; damage accumulates linearly with no temporal decay. A scheduling-time checksum bounds cumulative damage to one batch with negligible overhead.
+- **Trust boundary**: Cross-tenant, Cross-request
+- **arXiv**: [2604.17249](https://arxiv.org/abs/2604.17249)
+
+#### PrefixWall: Mitigating Prefix Caching Side Channels in Shared LLM Systems (PrefixWall) (2026-03)
+- **Summary**: Automatic Prefix Caching (APC) creates timing side channels: hit/miss latency differences let multi-tenant attackers incrementally reconstruct another user's request. Existing defenses disable APC entirely. PrefixWall instead monitors cross-user cache reuse, flags suspicious sharing, and selectively isolates prefixes only when necessary, enabling up to 70% higher cache reuse and 30% lower inference latency than isolation-based defenses.
+- **Trust boundary**: Cross-tenant
+- **arXiv**: [2603.10726](https://arxiv.org/abs/2603.10726)
+
+#### CacheTrap: Unveiling a Stealthier Gray-Box Trojan against LLMs (CacheTrap) (2025-11)
+- **Summary**: CacheTrap is the first gray-box Trojan targeting the LLM KV cache: a single-bit flip in the KV cache acts as a transient trigger that induces targeted behaviors without changing inputs or model weights. An efficient search locates vulnerable cache positions independent of weights or datasets. On five open-source LLMs it reaches 100% attack success rate with the trigger while preserving benign accuracy, by flipping just one bit.
+- **Trust boundary**: Model-internal
+- **arXiv**: [2511.22681](https://arxiv.org/abs/2511.22681)
+
+#### Shadow in the Cache: Unveiling and Mitigating Privacy Risks of KV-cache in LLM Inference (2025-08)
+- **Summary**: This first comprehensive analysis of KV-cache privacy risks shows attackers can reconstruct sensitive user inputs directly from the KV cache via three vectors: a direct Inversion Attack, a broader Collision Attack, and a semantic Injection Attack. The KV-Cloak defense combines reversible matrix-based obfuscation with operator fusion, reducing reconstruction quality to random noise with virtually no accuracy loss and minimal performance overhead.
+- **Trust boundary**: Cross-tenant
+- **arXiv**: [2508.09442](https://arxiv.org/abs/2508.09442)
+
+#### CachePrune: Teaching LLMs What Not to Follow via KV-Cache Editing (2025-04)
+- **Summary**: LLMs cannot distinguish data from instructions in prompt context, enabling indirect prompt injection. CachePrune prunes instruction-following neurons during KV cache encoding of the context, steering the model to treat context purely as data. Neurons are identified via preferential attribution loss theoretically tied to a DPO upper bound. The defense runs at cache encoding time with zero test-time overhead, significantly reducing attack success rate while preserving instruction-following.
+- **Trust boundary**: Model-internal
+- **arXiv**: [2504.21228](https://arxiv.org/abs/2504.21228)
 
 #### I Know What You Asked: Prompt Leakage via KV-Cache Sharing in Multi-Tenant LLM Serving (PromptPeek) (2025-02)
-- **简介**：南方科技大学与字节跳动的工作，是 KV prefix 共享攻击这条线的奠基论文之一。 作者提出 PromptPeek 攻击：在多租户 serving 中，攻击者通过构造候选 prefix 并测量首 token 时延判断缓存是否命中，据此逐步推断出其他用户 prompt 的内容。 该工作直接推动了工程侧的防御响应 —— vLLM 随后引入 cache_salt 机制， 把租户标识注入首个 cache block 的 hash 以隔离这条 timing channel。
-- **信任边界**：跨租户 ｜ **发表**：NDSS 2025
-- **链接**：https://www.ndss-symposium.org/ndss-paper/i-know-what-you-asked-prompt-leakage-via-kv-cache-sharing-in-multi-tenant-llm-serving/
+- **Summary**: A foundational KV prefix-sharing attack (SUSTech & ByteDance): PromptPeek measures first-token latency on candidate prefixes in multi-tenant serving to reconstruct other users' prompts. It directly drove vLLM's cache_salt defense, which injects tenant identity into the first cache block's hash.
+- **Trust boundary**: Cross-tenant · **Venue**: NDSS 2025
+- **Link**: https://www.ndss-symposium.org/ndss-paper/i-know-what-you-asked-prompt-leakage-via-kv-cache-sharing-in-multi-tenant-llm-serving/
 
-### 1.2 Activation / Embedding 状态泄露
+### 1.2 Activation / Embedding State Leakage
 
-*中间激活、稀疏模式、hidden state 反演出原始输入*
+*Recovering original input from intermediate activations, sparsity patterns and hidden states.*
 
 #### SparSEEty: Extracting Tokens from Sparsity-Exploiting LLM Serving Systems via Deterministic Side Channels (SparSEEty) (2026-08)
-- **简介**：现代 LLM 存在激活稀疏性，只有部分神经元会被给定 token 激活，serving 系统 普遍利用这一性质做优化。本文指出这种优化把模型的内部激活模式暴露成了 可观测的确定性侧信道：由于稀疏模式与输入 token 强相关且执行路径确定， 攻击者可据此反推出被处理的 token。这是「性能优化把模型内部状态外化」 这一类问题的典型案例，与 KV cache 侧信道同源但作用在激活层面。
-- **信任边界**：跨租户、主机-设备
-- **arXiv**：[2608.02995](https://arxiv.org/abs/2608.02995)
+- **Summary**: Serving systems exploit LLM activation sparsity for optimization, but this externalizes internal activation patterns as a deterministic side channel: sparse patterns correlate strongly with input tokens, so attackers can recover processed tokens—an activation-layer analog of KV-cache side channels.
+- **Trust boundary**: Cross-tenant, Host–device
+- **arXiv**: [2608.02995](https://arxiv.org/abs/2608.02995)
 
-### 1.3 解耦推理与 KV 跨节点搬运
+#### MOSAIC: Masked Outsourcing of Secure AI Computations (MOSAIC) (2026-07)
+- **Summary**: Masking protocol for outsourcing transformer inference to untrusted accelerators while hiding both input and model. Small result noise (security from LWE/LPN) gives optimal client overhead and Hadamard rotations bound cross-layer error; on 70B models perplexity matches BF16 on HumanEval.
+- **Trust boundary**: Inter-node, Host–device
+- **arXiv**: [2607.29221](https://arxiv.org/abs/2607.29221)
 
-*prefill/decode 分离、RDMA 传输 KV、KV 的租户绑定与请求绑定、 stale KV、重放、误路由、跨租户 KV 注入*
+#### (A)iSpy: Parasitic Trojans for Machine Learning Infrastructure ((A)iSpy) (2026-07)
+- **Summary**: Parasitic Trojan inside ML runtimes (implemented in ONNX Runtime) that observes live tensor states during training and inference. It exfiltrates hyperparameters via model weights or logits and amplifies weak data poisoning into backdoors, raising attack success from near zero to 100%.
+- **Trust boundary**: Supply chain
+- **arXiv**: [2607.17550](https://arxiv.org/abs/2607.17550)
+
+#### Image Prompt Reconstruction Attacks on Distributed MLLM Inference Frameworks (2026-06)
+- **Summary**: First image-prompt reconstruction attacks on distributed MLLM inference, where intermediate embeddings shared among participants leak visual inputs. A 100%-accurate extraction step enables pixel-level (MPAA) and diffusion-guided (IEDA) reconstruction on Gemma 3, Phi 4, Qwen 2.5 VL and Llama 4.
+- **Trust boundary**: Inter-node, Cross-tenant
+- **arXiv**: [2606.18710](https://arxiv.org/abs/2606.18710)
+
+#### Bifrost: Hybrid TEE-FHE Inference for Privacy-Preserving Transformer and LLM Serving (Bifrost) (2026-06)
+- **Summary**: Hybrid TEE-FHE serving: secrets stay in an attested CPU TEE, linear layers run as CKKS ciphertext on untrusted accelerators, and KV-state transitions never leave the TEE. Bifrost+ builds prompt-side KV in the TEE, cutting projected latency 9.25-9.91x and TTFT by 14.6-53.4x versus direct FHE.
+- **Trust boundary**: Host–device, Cross-tenant
+- **arXiv**: [2606.17421](https://arxiv.org/abs/2606.17421)
+
+#### The Vision Encoder as a Privacy Boundary: Visual-Token Side Channels in Encoder-Free Vision-Language Models (2026-06)
+- **Summary**: Encoder-free VLMs route image patches directly into the LLM token stream, turning intermediate visual tokens into a pre-output side channel. Decoders invert visual-token streams from Gemma4 and Fuyu, recovering recognizable image structure and readable held-out access codes; Gemma4 layer-0 KV cache tensors are directly invertible, placing the channel inside KV caches persisted by production serving stacks. The attack resists additive noise and quantization.
+- **Trust boundary**: Cross-tenant
+- **arXiv**: [2606.14783](https://arxiv.org/abs/2606.14783)
+
+#### Defense Against Prompt Inversion Attacks: An Information-Theoretic Approach for LLM Collaborative Inference (2026-06)
+- **Summary**: Information-theoretic defense against prompt inversion in edge-cloud collaborative inference, where transmitted intermediate activations leak user prompts. Information-bottleneck privacy adapters minimize activation-input mutual information, cutting attack success by up to 35% over prior defenses.
+- **Trust boundary**: Inter-node
+- **arXiv**: [2606.11592](https://arxiv.org/abs/2606.11592)
+
+#### Good-Enough LLM Obfuscation (GELO) (GELO) (2026-03)
+- **Summary**: On shared accelerators, an adversary reading device memory can observe KV caches and hidden states; MPC/FHE are 1-2 orders of magnitude too slow. GELO hides hidden states with fresh per-batch invertible mixing (U = AH offloaded, A^{-1} applied on return), leaving the attacker a single-batch blind source separation problem. On Llama-2 7B it preserves float32 outputs exactly with ~20-30% compute overhead, and a 60M-parameter transformer unmixing attack fails.
+- **Trust boundary**: Host–device
+- **arXiv**: [2603.05035](https://arxiv.org/abs/2603.05035)
+
+#### Attacks on Approximate Caches in Text-to-Image Diffusion Models (2025-08)
+- **Summary**: Security assessment of approximate caching in text-to-image diffusion serving, which reuses intermediate states across similar prompts and breaks user isolation. Shows a remote covert channel lasting days, prompt stealing from cache hits, and poisoning rendering attacker logos on later hits.
+- **Trust boundary**: Cross-tenant, Cross-request
+- **arXiv**: [2508.20424](https://arxiv.org/abs/2508.20424)
+
+#### I Know What You Said: Unveiling Hardware Cache Side-Channels in Local Large Language Model Inference (2025-05)
+- **Summary**: Hardware cache side-channels on local LLM inference leak token values via embedding-lookup access patterns and token positions via decoding timing. An unprivileged eavesdropper reconstructs input/output text on Llama, Falcon and Gemma with average edit distance of 17.3% (input) and 5.2% (output).
+- **Trust boundary**: Cross-tenant
+- **arXiv**: [2505.06738](https://arxiv.org/abs/2505.06738)
+
+#### Spill The Beans: Exploiting CPU Cache Side-Channels to Leak Tokens from Large Language Models (Spill The Beans) (2025-05)
+- **Summary**: Flush+reload attack co-located with a victim LLM that watches shared CPU caches for embedding-vector accesses and maps cache hits back to generated tokens. Balancing monitored vocabulary against eviction, one shot recovers 80-90% of a high-entropy API key and about 40% of English text.
+- **Trust boundary**: Cross-tenant
+- **arXiv**: [2505.00817](https://arxiv.org/abs/2505.00817)
+
+### 1.3 Disaggregated Inference & Cross-Node KV Transfer
+
+*Prefill/decode disaggregation, RDMA KV transfer, KV tenant/request binding, stale KV, replay, misrouting, cross-tenant KV injection.*
 
 #### Denial of Deadline: Network-Driven Accuracy Collapse in Distributed Inference Pipelines (Denial of Deadline) (2026-07)
-- **简介**：分布式推理流水线依赖节点间网络按时交付中间结果，本文指出攻击者无需击穿 任何计算节点，只要在网络层制造有针对性的延迟，就能让流水线错过截止时间， 迫使系统退化到降级路径并造成精度崩塌。这类攻击的特殊之处在于攻击目标 既不是可用性也不是机密性，而是**推理结果的正确性**， 且从单节点视角看每个组件都在正常工作。
-- **信任边界**：节点间
-- **arXiv**：[2607.24692](https://arxiv.org/abs/2607.24692)
+- **Summary**: Distributed inference pipelines rely on timely inter-node delivery. Without compromising any compute node, targeted network delay makes the pipeline miss deadlines and forces degraded paths, collapsing accuracy—the target is correctness of results while every component looks healthy in isolation.
+- **Trust boundary**: Inter-node
+- **arXiv**: [2607.24692](https://arxiv.org/abs/2607.24692)
 
-### 1.4 缓存一致性与语义缓存
+### 1.4 Cache Coherence & Semantic Cache
 
-*prefix-cache hash 碰撞、image cache 碰撞、semantic cache 语义不一致*
+*Prefix-cache hash collisions, image-cache collisions, semantic-cache inconsistency.*
 
 #### HijackKV: New Threat in Position-Independent KV Cache Reuse (HijackKV) (2026-07)
-- **简介**：为提升复用率，新一代缓存方案允许位置无关的 KV 重用 —— 同一段文本的 KV 不再绑定在原有位置上即可被复用。本文指出这种放松引入了新的攻击面： 攻击者可以让被复用的 KV 片段在新上下文中承载与原意不同的语义， 从而在模型输入表面完全正常的情况下篡改其内部上下文。这类攻击的隐蔽性在于 prompt 本身是良性的，被改变的是模型实际看到的内部状态。
-- **信任边界**：跨请求、跨租户
-- **arXiv**：[2607.19957](https://arxiv.org/abs/2607.19957)
+- **Summary**: Position-independent KV reuse decouples KV blocks from their original positions to raise hit rates. This paper shows it opens a new attack surface: reused KV segments can carry different semantics in new contexts, tampering with the model's internal context while the surface prompt stays benign.
+- **Trust boundary**: Cross-request, Cross-tenant
+- **arXiv**: [2607.19957](https://arxiv.org/abs/2607.19957)
+
+#### Grounded Cache Routing for Retrieval-Augmented Generation: When Is It Safe to Reuse an Answer? (2026-05)
+- **Summary**: Output-level semantic answer caches in RAG are fragile: evidence drifts and adversarial collision attacks hijack cached responses. GroundedCache admits a cached answer only when 4 gates hold (query similarity, evidence overlap, source-version validity, lexical support). With the unsafe-served rate (USR) metric on 12,000 generations (Qwen2.5-7B on vLLM), it drives USR to 0.0% on HotpotQA (vs. 15-35% naive) and 1.5% on mtRAG drift (vs. 51.5%), at 1.04-1.07x p50 latency.
+- **Trust boundary**: Cross-tenant, Cross-request
+- **arXiv**: [2605.27494](https://arxiv.org/abs/2605.27494)
 
 #### Cache Me, Catch You: Cache Related Security Threats in LLM Serving Frameworks (Cache Me Catch You) (2026-02)
-- **简介**：系统性审计了 LLM serving 框架中各类缓存的安全问题，指出现代 serving 的缓存 已不止 KV 一种，而是 prefix cache、semantic cache、image cache 并存。 作者发现了 prefix-cache hash 碰撞、image-cache 碰撞以及 semantic cache 的语义不一致三类问题，并落地为真实漏洞（含 CVE-2025-25183、CVE-2025-46722 等）。 这篇是本仓库第 7 章「工程侧安全」与学术研究结合得最好的范例。
-- **信任边界**：跨租户、跨请求 ｜ **发表**：NDSS 2026
-- **链接**：https://github.com/XingTuLab/Cache_Me_Catch_You
-- **代码**：https://github.com/XingTuLab/Cache_Me_Catch_You
+- **Summary**: A systematic audit of cache security in LLM serving frameworks, covering prefix, semantic, and image caches. It uncovers prefix-cache hash collisions, image-cache collisions, and semantic inconsistency, landed as real vulnerabilities including CVE-2025-25183 and CVE-2025-46722.
+- **Trust boundary**: Cross-tenant, Cross-request · **Venue**: NDSS 2026
+- **Link**: https://github.com/XingTuLab/Cache_Me_Catch_You
+- **Code**: https://github.com/XingTuLab/Cache_Me_Catch_You
 
-## 2 Semantic-to-Resource 攻击面
+## 2 Semantic-to-Resource Attack Surface
 
-*这是 AI Infra 最根本的独特性：**用户输入的语义会直接决定底层计算拓扑、 缓存状态、GPU 内存占用、调度行为与网络通信**。普通 Web/Cloud 里 request content 与底层 resource state 相对解耦；LLM Infra 里一段 prompt 可以同时改变 KV 分配、 prefix 命中、batch 组成、抢占行为、MoE 专家路由与 GPU 间通信。 于是攻击者可以通过完全合法的 API 输入去操纵系统状态。*
+*The most fundamental property of AI infra: the semantics of user input directly determines compute topology, cache state, GPU memory, scheduling and network traffic. A single prompt shapes KV allocation, prefix hits, batch composition, preemption, MoE routing and inter-GPU traffic — input controls not only model output but infrastructure state. Attackers can therefore manipulate the system through perfectly legitimate API requests.*
 
-### 2.1 Scheduler 状态操纵与延迟 DoS
+### 2.1 Scheduler Manipulation & Latency DoS
 
-*不打 GPU FLOPS，而是打 LLM serving 的状态机 —— 用少量精心构造的请求 操纵输出长度、KV 占用、batch 生命周期，诱发反复抢占与重算*
+*Attacking the serving state machine, not GPU FLOPS — a few crafted requests manipulate output length, KV occupancy and batch lifetime to trigger repeated preemption and recomputation.*
+
+#### Bit-Exact AI Inference Verification Without Performance Tradeoffs (BitExactVerify) (2026-05)
+- **Summary**: Counters covert adversaries abusing serving freedom—steganography, unreported software changes, or computation hidden in vLLM batch elements. Engines are deterministic but non-invariant, enabling bit-exact re-computation via software-only GPU emulation, making rounding errors an auditable signature.
+- **Trust boundary**: Cross-tenant
+- **arXiv**: [2606.00279](https://arxiv.org/abs/2606.00279)
 
 #### Rethinking Latency Denial-of-Service: Attacking the LLM Serving Framework, Not the Model (Fill and Squeeze) (2026-02)
-- **简介**：传统 DoS 靠海量请求压垮算力，本文指出 LLM serving 存在更廉价的路径： 攻击的不是 GPU FLOPS，而是 serving 框架的状态机。作者提出 Fill and Squeeze 两阶段攻击 —— Fill 阶段用精心构造的请求占满全局 KV cache， Squeeze 阶段迫使调度器对其他租户的请求反复抢占与重算。 评估中受害者的首 token 时延劣化可达数十至数百倍量级， 而攻击者只需少量完全合法的 API 请求。
-- **信任边界**：跨租户
-- **arXiv**：[2602.07878](https://arxiv.org/abs/2602.07878)
+- **Summary**: Rather than flooding GPU FLOPS, this attack targets the serving framework's state machine: Fill occupies the global KV cache with crafted requests, Squeeze forces repeated preemption and recomputation. Victim TTFT degrades tens to hundreds of times using only a few perfectly legal API calls.
+- **Trust boundary**: Cross-tenant
+- **arXiv**: [2602.07878](https://arxiv.org/abs/2602.07878)
 
-### 2.2 MoE 路由侧信道
+#### RepetitionCurse: Measuring and Understanding Router Imbalance in Mixture-of-Experts LLMs under DoS Stress (RepetitionCurse) (2025-12)
+- **Summary**: Shows OOD prompts can hijack MoE routing under expert parallelism, concentrating all tokens on the same top-k experts so some devices overload while others idle. Black-box RepetitionCurse uses repetitive token patterns, inflating latency 3.063x on Mixtral-8x7B and violating TTFT SLOs.
+- **Trust boundary**: Cross-tenant
+- **arXiv**: [2512.23995](https://arxiv.org/abs/2512.23995)
 
-*经 cache / TLB / performance counter / 时延 / 网络流量反推专家激活，进而还原输入语义*
+### 2.2 MoE Routing Side Channels
+
+*Inferring expert activation via cache/TLB/performance counters/latency/network, and from it the input semantics.*
 
 #### MoEcho: Exploiting Side-Channel Attacks to Compromise User Privacy in Mixture-of-Experts LLMs (MoEcho) (2025-08)
-- **简介**：东北大学团队的工作，是 MoE 架构侧信道这条线的代表作。核心观察是 MoE 让 模型语义决定物理执行路径：不同领域的 prompt 会激活不同的专家组合。 作者利用 CPU/GPU 上的 cache、TLB、performance counter 等侧信道推断专家 激活模式，并进一步还原 prompt 与 response 信息。这是标准的 「模型架构 × 系统安全」交叉点 —— 攻击可行性直接来自架构设计本身， 而非某个实现缺陷。发表于 CCS 2025，pp. 2159–2173。
-- **信任边界**：跨租户、主机-设备 ｜ **发表**：CCS 2025
-- **arXiv**：[2508.15036](https://arxiv.org/abs/2508.15036)
+- **Summary**: A representative MoE side-channel work: MoE makes semantics determine physical execution paths, so prompts activate different expert sets. Cache, TLB, and performance-counter channels on CPU/GPU reveal expert activation patterns and prompt/response content. CCS 2025, pp. 2159–2173.
+- **Trust boundary**: Cross-tenant, Host–device · **Venue**: CCS 2025
+- **arXiv**: [2508.15036](https://arxiv.org/abs/2508.15036)
 
-### 2.3 MoE 路由操纵与 Safety 削弱
+### 2.3 MoE Routing Manipulation & Safety Degradation
 
-*safety 行为与部分专家强相关，操纵 routing 可增强越狱。 这一节要求论文的攻击手段必须作用于**路由机制本身**， 而不是把普通越狱换个 MoE 模型重跑一遍*
+*Safety behavior is concentrated in a few experts; manipulating routing strengthens jailbreaks. Entries here must act on the routing mechanism itself, not re-run a generic jailbreak on an MoE model.*
 
 #### Misrouter: Exploiting Routing Mechanisms for Input-Only Attacks on Mixture-of-Experts LLMs (Misrouter) (2026-05)
-- **简介**：与需要改动权重或访问内部状态的攻击不同，本文探讨仅通过输入操纵路由的可能性。 攻击者不接触模型参数，只构造输入去改变 router 的专家选择， 使推理绕开承担安全职责的专家。这个威胁模型比 GateBreaker 更贴近真实部署 （攻击者通常只有 API 访问权），也因此更值得关注 —— 它说明 MoE 的路由机制本身就是一个可被合法输入操纵的攻击面。
-- **信任边界**：模型内部
-- **arXiv**：[2605.04446](https://arxiv.org/abs/2605.04446)
+- **Summary**: Misrouter manipulates MoE routing through inputs alone—no weight changes or internal access. Crafted inputs alter the router's expert selection so inference bypasses safety experts. This API-only threat model fits real deployments and shows routing itself is an attack surface.
+- **Trust boundary**: Model-internal
+- **arXiv**: [2605.04446](https://arxiv.org/abs/2605.04446)
 
 #### RouteHijack: Routing-Aware Attack on Mixture-of-Experts LLMs (RouteHijack) (2026-05)
-- **简介**：从路由感知的角度构造针对 MoE 的攻击，与 GateBreaker、Misrouter 共同勾勒出 「routing 是 MoE 安全薄弱环节」这一判断。三篇工作的差异在威胁模型强度： GateBreaker 需要神经元级干预，Misrouter 限定为仅输入操纵， 本文则聚焦攻击者对路由行为的建模与利用。 收录这三篇是为了让读者能直接对比同一攻击面下不同威胁模型的可行性边界。
-- **信任边界**：模型内部
-- **arXiv**：[2605.02946](https://arxiv.org/abs/2605.02946)
+- **Summary**: A routing-aware attack on MoE LLMs, complementing GateBreaker and Misrouter in establishing routing as MoE's weak point. The three differ in threat-model strength: neuron-level intervention, input-only manipulation, and—here—modeling and exploiting routing behavior.
+- **Trust boundary**: Model-internal
+- **arXiv**: [2605.02946](https://arxiv.org/abs/2605.02946)
 
 #### GateBreaker: Gate-Guided Attacks on Mixture-of-Expert LLMs (GateBreaker) (2025-12)
-- **简介**：发现 MoE 模型中存在一批在有害输入上被过度路由的「safety experts」， 模型的拒答行为高度依赖这少数专家。作者据此提出门控引导的攻击： 只需禁用约 3% 的神经元，攻击成功率就从 7.4% 抬升到 64.9%。 这个结果的意义在于揭示了 MoE 的安全对齐在架构层面是**局部且脆弱**的 —— 对齐信号集中在少量专家上，因而可以被针对性地绕过。已被 USENIX Security 2026 接收。
-- **信任边界**：模型内部 ｜ **发表**：USENIX Security 2026
-- **arXiv**：[2512.21008](https://arxiv.org/abs/2512.21008)
+- **Summary**: MoE models have "safety experts" over-routed on harmful inputs, and refusal depends heavily on them. Disabling only ~3% of neurons via a gate-guided attack raises attack success from 7.4% to 64.9%, showing MoE safety alignment is localized and fragile. USENIX Security 2026.
+- **Trust boundary**: Model-internal · **Venue**: USENIX Security 2026
+- **arXiv**: [2512.21008](https://arxiv.org/abs/2512.21008)
 
-### 2.4 专家并行通信与负载劫持
+### 2.4 Expert-Parallel Communication & Load Hijacking
 
-*EP all-to-all 流量热点、straggler 诱导、跨租户延迟干扰*
+*EP all-to-all hotspots, straggler induction, cross-tenant latency interference.*
 
 #### Trigger the Straggler: Load Hijack on Mixture-of-Experts LLMs (Trigger the Straggler) (2026-08)
-- **简介**：专家并行是跨多 GPU 部署 MoE 的常见策略，router 的决策同时决定了激活哪些专家 以及哪块 GPU 承担负载。本文指出攻击者可以构造输入把负载定向堆到少数设备上， 人为制造 straggler，从而干扰同一部署上其他租户的延迟。 这是 Semantic-to-Resource 攻击面的一个干净样本：一段合法 prompt 经由路由机制被放大成物理层面的资源倾斜与跨租户干扰。
-- **信任边界**：节点间、跨租户
-- **arXiv**：[2608.10614](https://arxiv.org/abs/2608.10614)
+- **Summary**: In expert-parallel MoE, the router decides both which experts activate and which GPUs carry the load. Crafted inputs steer load onto a few devices, creating artificial stragglers that degrade co-tenant latency—a legal prompt amplified via routing into physical resource skew.
+- **Trust boundary**: Inter-node, Cross-tenant
+- **arXiv**: [2608.10614](https://arxiv.org/abs/2608.10614)
 
-## 3 Infra 优化引发的 Safety 漂移
+## 3 Infra Optimization Induces Safety Drift
 
-*传统 infra optimization 被理解为 performance / accuracy 的 tradeoff： `maximize throughput subject to accuracy >= X`。 但对 aligned 模型，量化与缓存压缩可以在 perplexity 几乎不变的情况下显著 破坏 refusal 行为 —— 也就是说 **utility 守住了，safety 掉了**。 本章追问：Model Safety 是否应当成为 Infra Optimization 的 invariant， 即目标是否应改为 `subject to utility >= X AND safety >= Y`。*
+*Conventional infra optimization is a performance/accuracy tradeoff: maximize throughput subject to accuracy >= X. But for aligned models, quantization and cache compression can significantly degrade refusal behavior with almost unchanged perplexity — utility holds while safety drops. This section asks whether Model Safety should be an invariant of infra optimization: subject to utility >= X AND safety >= Y.*
 
 #### Quantization-Triggered Backdoors in Language Models: Cross-Quantizer Transferability and the Validation--Deployment Gap (Quant Backdoor) (2026-08)
-- **简介**：研究一类由量化触发的后门：模型在全精度下表现完全正常，只有在被量化部署后 恶意行为才显现。本文进一步考察了这种后门在不同量化器之间的可迁移性， 说明攻击并不依赖某个特定量化实现。这条线把 infra 优化与供应链安全接在了一起 —— 部署环节的常规操作成为攻击的触发条件， 意味着仅审计发布的全精度权重不足以保证部署后的安全。
-- **信任边界**：供应链、模型内部
-- **arXiv**：[2608.27512](https://arxiv.org/abs/2608.27512)
+- **Summary**: Quantization-triggered backdoors: models behave normally at full precision and turn malicious only after quantized deployment. The backdoor transfers across quantizers, so routine deployment becomes the trigger—auditing full-precision weights alone cannot guarantee post-deployment safety.
+- **Trust boundary**: Supply chain, Model-internal
+- **arXiv**: [2608.27512](https://arxiv.org/abs/2608.27512)
 
 #### Preserving Fairness and Safety in Quantized LLMs Through Critical Weight Protection (Critical Weight Protection) (2026-07)
-- **简介**：针对量化导致公平性与安全性退化的问题，提出通过保护关键权重来维持这两项属性。 与只关注 perplexity 或下游任务准确率的常规量化工作不同， 本文把 fairness 与 safety 当作需要显式保护的目标。 这正是本章想推动的范式转变：infra 优化的约束条件应从 `accuracy >= X` 扩展为 `utility >= X AND safety >= Y`。 Findings of ACL 2026，pp. 19831–19855。
-- **信任边界**：模型内部 ｜ **发表**：Findings of ACL 2026
-- **链接**：https://aclanthology.org/2026.findings-acl.993/
+- **Summary**: Counters fairness and safety degradation from quantization by protecting critical weights, treating both as explicit protection targets rather than only perplexity—pushing infra optimization from "accuracy >= X" to "utility >= X AND safety >= Y". Findings of ACL 2026, pp. 19831–19855.
+- **Trust boundary**: Model-internal · **Venue**: Findings of ACL 2026
+- **Link**: https://aclanthology.org/2026.findings-acl.993/
 
 #### When Efficiency Meets Safety: A Benchmark Security Analysis of KV Cache Compression in Large Language Models (Safe-CAM) (2026-07)
-- **简介**：系统研究了 KV cache 压缩与越狱之间的关系，是这一交叉方向上少见的 benchmark 级工作。作者发现不同压缩方法对安全性的影响方向并不一致 —— 有的削弱安全性，有的反而增强，说明「压缩必然损害 safety」的直觉过于简化。 文中提出 Safe-CAM 作为缓解方案。ACL 2026 Long Paper，pp. 24472–24485。
-- **信任边界**：模型内部 ｜ **发表**：ACL 2026
-- **链接**：https://aclanthology.org/2026.acl-long.1123/
+- **Summary**: A benchmark study of KV-cache compression versus jailbreak safety: different compression methods affect safety inconsistently—some weaken, some strengthen—refuting the intuition that compression necessarily harms safety. Safe-CAM is proposed as mitigation. ACL 2026 Long Paper, pp. 24472–24485.
+- **Trust boundary**: Model-internal · **Venue**: ACL 2026
+- **Link**: https://aclanthology.org/2026.acl-long.1123/
+
+#### Speculative Decoding at Temperature Zero: A Scoped Safety-Invariance Screen with a 48,072-Sample Expansion (TAIS) (2026-06)
+- **Summary**: Screens whether temperature-zero speculative decoding leaks draft-side behavior into safety outputs. Over 16,783 confirmatory plus 44,066 expansion samples (bf16, DPO-adversarial, GPTQ-4bit drafts), TAIS requires TOST equivalence at +/-3pp: refusal Cohen's h peaks at 0.024, 25/27 contrasts pass.
+- **Trust boundary**: Model-internal
+- **arXiv**: [2606.25097](https://arxiv.org/abs/2606.25097)
+
+#### AnchorKV: Safety-Aware KV Cache Compression via Soft Penalty with a Refusal Anchor (AnchorKV) (2026-06)
+- **Summary**: Finds accuracy-preserving KV cache compression still breaks jailbreak defense and refusal alignment under aggressive eviction. AnchorKV builds an offline refusal anchor via difference-of-means in key-projection space and softly penalizes retention scores, restoring safety at small utility cost.
+- **Trust boundary**: Model-internal
+- **arXiv**: [2606.17872](https://arxiv.org/abs/2606.17872)
 
 #### Alignment Collapse Under KV Cache Quantization: Diagnosis and Mitigation (Alignment Collapse) (2026-06)
-- **简介**：本文给出了「infra 优化偷偷改变模型安全性」最直接的证据： KV cache 量化可以在 perplexity 几乎不变的情况下显著破坏模型的拒答与对齐行为。 这个现象很反直觉 —— 按传统 infra 视角，量化只是 performance/accuracy 的权衡， 而 accuracy 指标显示一切正常。作者进一步诊断了漂移的来源并给出缓解方案。 这篇支撑了本章的核心问题：safety 是否应当成为 infra optimization 的 invariant。
-- **信任边界**：模型内部
-- **arXiv**：[2606.09864](https://arxiv.org/abs/2606.09864)
+- **Summary**: Direct evidence that infra optimization silently changes model safety: KV-cache quantization breaks refusal and alignment behavior while perplexity stays nearly unchanged—traditional metrics report all normal. The authors diagnose the drift's source and propose mitigations.
+- **Trust boundary**: Model-internal
+- **arXiv**: [2606.09864](https://arxiv.org/abs/2606.09864)
 
-## 4 训练侧完整性
+#### Quantamination: Dynamic Quantization Leaks Your Data Across the Batch (Quantamination) (2026-04)
+- **Summary**: Reveals dynamic quantization opens a cross-tenant side channel in serving: an adversary co-batched with victims can recover their data via shared runtime quantization parameters. At least 4 popular ML frameworks leak across the batch boundary, enabling partial to full input recovery.
+- **Trust boundary**: Cross-tenant
+- **arXiv**: [2604.26505](https://arxiv.org/abs/2604.26505)
 
-*分布式训练有一个很特殊的安全属性：**local corruption can become global model corruption** —— 单个 rank 产生的错误张量经 collective 传播到全部 rank 并写入 checkpoint。目前这块大部分工作停留在 reliability 视角（SDC 检测），往 security 推一步（把 accidental faulty worker 换成 malicious worker）后基本还是空白。*
+#### Enhancing Trustworthiness with Mixed Precision: Benchmarks, Opportunities, and Challenges (QuantTrust) (2025-11)
+- **Summary**: Measures how weight/activation/KV quantization shifts four trustworthiness metrics—robustness, fairness, ethics, OOD—that perplexity-focused frameworks omit. Trustworthiness varies unstably across ratios and methods; precision-ensemble voting over mixed-precision variants lifts it by up to 5.8%.
+- **Trust boundary**: Model-internal
+- **arXiv**: [2511.22483](https://arxiv.org/abs/2511.22483)
+
+#### Fewer Weights, More Problems: A Practical Attack on LLM Pruning (FewerWeights) (2025-10)
+- **Summary**: First practical attack on deployment-time pruning: a shipped model looks benign but turns malicious once pruned, hiding payloads in pruning-surviving parameters masked by pruned-away ones. Under vLLM Magnitude/Wanda/SparseGPT: up to 95.7% jailbreak, 98.7% benign-refusal, 99.5% content injection.
+- **Trust boundary**: Model-internal, Supply chain
+- **arXiv**: [2510.07985](https://arxiv.org/abs/2510.07985)
+
+## 4 Training-Side Integrity
+
+*Distributed training has a special security property: local corruption can become global model corruption — a single rank's faulty tensor propagates through collectives into the checkpoint. Most work here is still framed as reliability (SDC detection); pushing it toward security (malicious instead of accidentally-faulty workers) is largely open.*
 
 #### TrainSDC: Characterizing and Mitigating Silent Data Corruption in Large Language Model Training (TrainSDC) (2026-08)
-- **简介**：刻画并缓解大模型训练中的静默数据损坏。与 AEGIS 的在线检测视角互补， 本文更侧重于 SDC 在训练过程中的表现形态与传播特征。 两篇合起来能给出「本地损坏如何变成全局模型损坏」的完整图景， 也为把该问题从 reliability 推向 security 提供了必要的现象基础。
-- **信任边界**：节点间
-- **arXiv**：[2608.30769](https://arxiv.org/abs/2608.30769)
+- **Summary**: Characterizes and mitigates silent data corruption in LLM training, complementing AEGIS's online detection with a focus on how SDCs manifest and propagate—together giving a full picture of how local corruption becomes global model damage, and a basis for moving from reliability to security.
+- **Trust boundary**: Inter-node
+- **arXiv**: [2608.30769](https://arxiv.org/abs/2608.30769)
 
 #### Safeguarding LLM Training at Scale: Online SDC Detection and Insights from 35 Million GPU Hours (AEGIS) (2026-07)
-- **简介**：清华与字节跳动基于 3500 万 GPU-hours 生产环境数据研究在线静默数据损坏检测， 是这一方向目前规模最大的实证工作。系统 AEGIS 在该规模下发现 18 起真实 SDC 与 13 块故障 GPU，运行开销仅 0.86%。这篇的价值在于用生产数据证实了 「单个 rank 的错误可经 collective 传播为全局模型污染」不是理论担忧。 目前该方向多停留在 reliability 视角，若把 accidental faulty worker 换成 malicious worker，分布式训练完整性几乎是一片空白。
-- **信任边界**：节点间、供应链 ｜ **发表**：OSDI 2026
-- **链接**：https://www.usenix.org/conference/osdi26/presentation/lei
+- **Summary**: Tsinghua and ByteDance's online SDC detection study over 35 million GPU-hours of production data—the largest to date. AEGIS found 18 real SDCs and 13 faulty GPUs at 0.86% overhead, confirming one rank's error can propagate via collectives into global model contamination. OSDI 2026.
+- **Trust boundary**: Inter-node, Supply chain · **Venue**: OSDI 2026
+- **Link**: https://www.usenix.org/conference/osdi26/presentation/lei
 
-## 5 硬件与执行环境
+## 5 Hardware & Execution Environment
 
-*GPU 微架构侧信道、光学/物理探测、TEE 与机密计算、远程证明*
+*GPU microarchitectural side channels, optical/physical probing, TEE and confidential computing, remote attestation.*
 
 #### JITterFlip: Uncovering Fault Attack Surfaces in JIT-Compiled LLM Serving (JITterFlip) (2026-08)
-- **简介**：现代 serving 框架大量依赖 JIT 编译生成算子内核，本文系统梳理了这一层 此前未被审视的故障攻击面。作者指出 JIT 产物在运行时驻留于可被故障注入 影响的内存区域，针对性的比特翻转可以改变内核行为而不触发任何完整性检查。 这把传统硬件故障攻击与 LLM serving 的动态编译特性接在了一起， 属于本仓库「硬件与执行环境」章节里少见的 infra-native 工作。
-- **信任边界**：主机-设备
-- **arXiv**：[2608.29745](https://arxiv.org/abs/2608.29745)
+- **Summary**: JIT-compiled kernels in modern serving frameworks are an unaudited fault-attack surface: JIT artifacts reside in memory exposed to fault injection, and targeted bit flips alter kernel behavior without triggering integrity checks—connecting classic hardware fault attacks with dynamic compilation.
+- **Trust boundary**: Host–device
+- **arXiv**: [2608.29745](https://arxiv.org/abs/2608.29745)
 
 #### LLMscope: Extracting LLM Assets from Edge AI Chips via Optical Probing (LLMscope) (2026-08)
-- **简介**：通过光学探测手段从边缘 AI 芯片中提取模型资产，把物理层攻击引入 LLM 部署场景。 与依赖软件侧信道的工作不同，本文的威胁模型假设攻击者可物理接触设备， 这在边缘部署与终端设备场景下是现实的。收录本篇是为了让「硬件与执行环境」 一章覆盖从微架构侧信道到物理探测的完整谱系。
-- **信任边界**：主机-设备、供应链
-- **arXiv**：[2608.25321](https://arxiv.org/abs/2608.25321)
+- **Summary**: Extracts LLM assets from edge AI chips via optical probing, bringing physical-layer attacks to LLM deployment. The threat model assumes physical device access—realistic for edge scenarios—extending hardware-side threats from microarchitectural side channels to physical probing.
+- **Trust boundary**: Host–device, Supply chain
+- **arXiv**: [2608.25321](https://arxiv.org/abs/2608.25321)
 
-## 6 防御与系统机制
+#### CloakLM: Obfuscating GPU Memory Layout to Mitigate Model Ex-filtration for Serving (CloakLM) (2026-06)
+- **Summary**: On third-party/shared accelerators, weights sit in large contiguous memory regions, so PCIe snooping or HBM dumps can reconstruct models. CloakLM removes this regularity via PCIe traffic shaping, weight shuffling, and HBM page remapping—software-only, vLLM/PyTorch-integrated, near-native overhead.
+- **Trust boundary**: Host–device
+- **arXiv**: [2606.18400](https://arxiv.org/abs/2606.18400)
 
-*按防御在系统栈上的介入层次组织：cache 隔离（如 cache salt）、 信息流追踪、隔离调度、确定性执行、审计与可观测性*
+## 6 Defenses & System Mechanisms
+
+*Organized by where the defense sits in the system stack: cache isolation (e.g. cache salt), information-flow tracking, isolated scheduling, deterministic execution, auditing and observability.*
 
 #### SEAL: Reinforcing Global Safety in Mixture-of-Experts through Shared Expert ALignment (SEAL) (2026-09)
-- **简介**：针对 MoE 安全对齐局部化的问题（即 GateBreaker 揭示的少数专家承担全部安全职责）， 提出通过共享专家对齐来强化全局安全性。思路是不再把 safety 押在个别专家上， 而是让承担安全职责的能力在专家间共享，从而抬高针对性绕过的成本。 这是本仓库防御章节中直接回应 MoE 路由攻击的工作， 建议与第 2.3 节的三篇攻击工作对照阅读。
-- **信任边界**：模型内部
-- **arXiv**：[2609.02293](https://arxiv.org/abs/2609.02293)
+- **Summary**: Responds to the localized MoE safety alignment revealed by GateBreaker: instead of betting safety on a few experts, SEAL shares safety capability across experts through shared expert alignment, raising the cost of targeted bypass. Read alongside the Section 2.3 routing attacks.
+- **Trust boundary**: Model-internal
+- **arXiv**: [2609.02293](https://arxiv.org/abs/2609.02293)
+
+#### Speculative Probing: LLM Monitoring at Speculative-Decoding Cost (SpecProbe) (2026-08)
+- **Summary**: Repurposes the speculative-decoding module already in serving stacks into a context-aware safety classifier: a trained soft prompt reuses the on-GPU KV cache at negligible cost. Across four models, probes beat zero-shot GPT-5.4-mini and match or beat 8B guards (Qwen3Guard-Gen-8B, Llama-Guard-3-8B).
+- **Trust boundary**: Model-internal
+- **arXiv**: [2608.28099](https://arxiv.org/abs/2608.28099)
 
 #### Here is a GIFT: Enforcing User Data Isolation in LLM Serving via GPU Information Flow Tracking (GIFT) (2026-08)
-- **简介**：LLM serving 框架在共享基础设施上处理大量用户数据，其中常含敏感信息， 而共享同一框架的用户之间缺乏强隔离保证。GIFT 把信息流追踪下沉到 GPU 层面， 在 vLLM 上实现了对用户数据流向的强制隔离。这是防御章节里少见的 系统机制级工作 —— 不是在输入输出侧加过滤器， 而是在执行基础设施内部建立可强制的隔离边界。
-- **信任边界**：跨租户、主机-设备
-- **arXiv**：[2608.25431](https://arxiv.org/abs/2608.25431)
+- **Summary**: Serving frameworks handle sensitive user data on shared infrastructure without strong inter-user isolation. GIFT enforces isolation via GPU-level information flow tracking on vLLM—a system-mechanism defense building enforceable boundaries inside the execution infrastructure, not I/O filters.
+- **Trust boundary**: Cross-tenant, Host–device
+- **arXiv**: [2608.25431](https://arxiv.org/abs/2608.25431)
 
-## 7 工程侧安全（非 arXiv 来源）
+#### HadAgent: Harness-Aware Decentralized Agentic AI Serving with Proof-of-Inference Blockchain Consensus (HadAgent) (2026-04)
+- **Summary**: Decentralized agentic serving with Proof-of-Inference consensus: nodes earn block rights via deterministic inference, verified by one replayed forward pass. Merkle-rooted lanes and recomputation trust tiers give 100% tamper detection at 0% false positives, isolating malicious nodes in two rounds.
+- **Trust boundary**: Inter-node
+- **arXiv**: [2604.18614](https://arxiv.org/abs/2604.18614)
 
-*本章以 CVE、厂商安全公告、框架 issue/PR、fuzzing 工具为主。 原因：serving 框架的真实漏洞走的是 CVE 与 GitHub advisory 渠道而非 arXiv， 而学术清单普遍不收这类条目 —— 这是本仓库最容易形成差异化的部分。 沿用 GUI Agent 安全那轮的教训：凡高度依赖非 arXiv 来源的章节必须显式规划 检索流程，否则会整段缺失。周更时本章需单独走 CVE / advisory 流程， 不要因为 arXiv 无结果就跳过。*
+#### AgenTEE: Confidential LLM Agent Execution on Edge Devices (AgenTEE) (2026-04)
+- **Summary**: Runs confidential LLM agent pipelines on edge devices: agent runtime, inference engine, and third-party apps sit in independently attested Arm CCA cVMs linked by verifiable channels. Prompts, weights, and runtime state stay safe from malicious users and compromised OS at under 5.15% overhead.
+- **Trust boundary**: Host–device
+- **arXiv**: [2604.18231](https://arxiv.org/abs/2604.18231)
+
+#### FlexServe: A Fast and Secure LLM Serving System for Mobile Devices with Flexible Resource Isolation (FlexServe) (2026-03)
+- **Summary**: Protects on-device LLM serving from a compromised OS kernel via flexible ARM TrustZone isolation of memory (Flex-Mem) and NPU (Flex-NPU). With LLM-aware memory management and a secure pipeline, it gains 10.05x average TTFT speedup over a strawman and up to 24.30x for agent workflows.
+- **Trust boundary**: Host–device
+- **arXiv**: [2603.09046](https://arxiv.org/abs/2603.09046)
+
+#### SuperLocalMemory: Privacy-Preserving Multi-Agent Memory with Bayesian Trust Defense Against Memory Poisoning (SuperLocalMemory) (2026-02)
+- **Summary**: Local-first multi-agent memory against OWASP ASI06 memory poisoning via architectural isolation and Bayesian trust scoring, with no cloud dependency. Per-agent provenance plus Leiden clustering give 10.6ms median search latency, a trust gap of 0.90, and 72% trust degradation under sleeper attacks.
+- **Trust boundary**: Cross-request
+- **arXiv**: [2603.02240](https://arxiv.org/abs/2603.02240)
+
+#### Confidential LLM Inference: Performance and Cost Across CPU and GPU TEEs (cLLM-TEE) (2025-09)
+- **Summary**: First comprehensive study of end-to-end LLM inference inside CPU and GPU TEEs. Llama2 7B/13B/70B in Intel TDX/SGX with AMX incurs under 10% throughput and 20% latency overhead; H100 Confidential Compute shows 4-8% throughput penalties, yielding 12 cost-security insights.
+- **Trust boundary**: Host–device
+- **arXiv**: [2509.18886](https://arxiv.org/abs/2509.18886)
+
+#### Selective KV-Cache Sharing to Mitigate Timing Side-Channels in LLM Inference (SafeKV) (2025-08)
+- **Summary**: Global KV-cache sharing creates a cross-tenant API timing channel. SafeKV couples privacy enforcement with cache management—three-tier detection, sensitivity-aware radix-tree memory management, RDR-guided leakage bounds—cutting TTFT overhead 40.58% vs full isolation, 2.66x throughput.
+- **Trust boundary**: Cross-tenant
+- **arXiv**: [2508.08438](https://arxiv.org/abs/2508.08438)
+
+## 7 Engineering-Side Security (non-arXiv)
+
+*CVEs, vendor advisories, framework issues/PRs, fuzzing tools. Real serving-framework vulnerabilities travel via CVE and GitHub advisory, not arXiv — and academic lists rarely collect them. This is where the list most easily differentiates. This section needs a dedicated non-arXiv retrieval flow; do not skip it just because arXiv returns nothing.*
 
 #### vLLM Automatic Prefix Caching: Cache Isolation for Security (cache_salt) (cache_salt) (2025-06)
-- **简介**：vLLM 针对 prefix cache timing 侧信道的官方防御机制。请求可携带 cache_salt 参数，该值会被注入首个 cache block 的 hash 计算，使不同租户即使 prefix 相同 也不会命中彼此的缓存。官方文档明确说明其目的是 "prevents timing-based attacks where an adversary could infer cached content by observing latency differences"。这条是学术攻击工作直接推动工程侧防御落地的 范例，也是第 7 章「工程侧安全」的典型条目形态。
-- **信任边界**：跨租户 ｜ **发表**：vLLM 官方文档
-- **链接**：https://docs.vllm.ai/en/latest/design/prefix_caching.html
+- **Summary**: vLLM's official defense against prefix-cache timing side channels: a cache_salt parameter is mixed into the first cache block's hash, so tenants with identical prefixes never share cache entries—officially "prevents timing-based attacks" that infer cached content from latency differences.
+- **Trust boundary**: Cross-tenant · **Venue**: vLLM 官方文档
+- **Link**: https://docs.vllm.ai/en/latest/design/prefix_caching.html
 
 ---
 
-## 贡献
+## Contributing
 
-只需修改 `data/papers.yaml`，`README.md` 与 `papers_by_*/` 下所有文件由 GitHub Actions 自动生成。收录标准与条目格式见 [CONTRIBUTING.md](CONTRIBUTING.md)，维护流程与检索口径见 [MAINTENANCE.md](MAINTENANCE.md)。
+You only ever edit `data/papers.yaml`; `README.md`, `README.zh.md` and everything under `views/` are regenerated by GitHub Actions. Scope and entry format: [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md). Maintenance process and retrieval calibration: [docs/MAINTENANCE.md](docs/MAINTENANCE.md).
 
-## 相关仓库
+## Related lists
 
-本仓库聚焦 LLM 基础设施自身的安全，以下方向请见：
+This list focuses on the security of LLM infrastructure itself. For adjacent areas:
 
-- GUI / Computer-Use Agent 安全：`Yuxuan2003/Awesome-GUI-Agent-Security`
-- LLM 安全与隐私大盘（模型层为主）：`ThuCCSLab/Awesome-LM-SSP`
-- LLM 推理系统能力向研究：`AmadeusChan/Awesome-LLM-System-Papers`
-- 模型压缩与量化（纯效率视角）：`HuangOwen/Awesome-LLM-Compression`
+- GUI / computer-use agent security: `Yuxuan2003/Awesome-GUI-Agent-Security`
+- Broad LLM safety & privacy (mostly model-layer): `ThuCCSLab/Awesome-LM-SSP`
+- LLM inference systems, capability-oriented: `AmadeusChan/Awesome-LLM-System-Papers`
+- Model compression & quantization (efficiency-only): `HuangOwen/Awesome-LLM-Compression`
 
