@@ -124,6 +124,23 @@ python3 scripts/check_links.py
 
 `check.yml` 的 `push` 触发**故意不加 paths 过滤** —— 首次推送时 `data/**` 属新增文件，paths 过滤不会匹配，导致 CI 在建仓时跑不起来（GUI 库实测踩过）。
 
+### 建仓时必做的一次性设置
+
+**新仓库的 Actions 默认是只读权限，`build.yml` 回推产物会失败。** 建仓当天实测：构建步骤全部成功，但最后一步「提交产物」失败，原因是 `GITHUB_TOKEN` 只有 read 权限，尽管 workflow 里已经写了 `permissions: contents: write`（仓库级设置优先级更高）。
+
+修法二选一：
+
+```bash
+# 方式 A：API（推荐，可脚本化）
+curl -X PUT -H "Authorization: Bearer $TOK" \
+  https://api.github.com/repos/<owner>/<repo>/actions/permissions/workflow \
+  -d '{"default_workflow_permissions":"write","can_approve_pull_request_reviews":false}'
+```
+
+方式 B：网页 Settings → Actions → General → Workflow permissions → 选 "Read and write permissions"。
+
+**这个设置只需做一次，但不做的话每次 data 变更后 README 都不会自动重建**，会退化成手工维护多文件、进而出现「目录与正文不同步」—— 正是本仓库架构要避免的问题。
+
 ## 相关
 
 - 姊妹仓库：`Yuxuan2003/Awesome-GUI-Agent-Security`（GUI/CUA agent 安全，按攻防轴组织）
