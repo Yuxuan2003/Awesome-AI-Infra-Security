@@ -141,6 +141,20 @@ curl -X PUT -H "Authorization: Bearer $TOK" \
 
 **这个设置只需做一次，但不做的话每次 data 变更后 README 都不会自动重建**，会退化成手工维护多文件、进而出现「目录与正文不同步」—— 正是本仓库架构要避免的问题。
 
+### 从姊妹仓库照搬 workflow 时要全文搜一遍路径名
+
+建仓时 `build.yml` 是从 GUI 库复制的，里面的 `git add` 还写着那边的目录名 `papers_by_env`，而本仓库叫 `papers_by_surface`，导致 Build 报 `fatal: pathspec 'papers_by_env' did not match any files`（exit 128）。
+
+**这个错误的迷惑性在于：构建步骤全部成功、README 也正确生成了，只有最后一步回推失败**，很容易误判成权限问题去改 Actions 权限（我就先改了一轮权限才发现真因）。
+
+照搬 workflow / 脚本后，用一句话自查：
+
+```bash
+grep -rn 'papers_by_env\|Awesome-GUI-Agent-Security' .github scripts
+```
+
+同理，`scripts/build.py` 里的 `REPO` 常量、README 徽章链接也都要改。
+
 ## 相关
 
 - 姊妹仓库：`Yuxuan2003/Awesome-GUI-Agent-Security`（GUI/CUA agent 安全，按攻防轴组织）
