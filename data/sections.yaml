@@ -1,0 +1,170 @@
+# 章节定义 —— README 结构与 papers.yaml 的 section 字段以此为准
+#
+# 组织维度：攻击面（一级章节）× 信任边界（交叉标签）
+#
+# 为什么这么切：现有唯一活跃的大盘 ThuCCSLab/Awesome-LM-SSP（2.1k★）是按投稿主题
+# 贴扁平标签，导致 MoEcho 与 PromptPeek 被塞进 C7.Privacy/Side-Channel 与网络流量
+# 指纹混在一起，且 B6/C7 两个同名 Side-Channel 节并存。它缺的正是「按系统栈建模」
+# 这一层 —— 既没有攻击面维度（KV / scheduler / interconnect），也没有信任边界维度
+# （跨租户 / 跨请求 / host-device / 节点间）。这就是本仓库的位置。
+#
+# stock 字段是 2026-09-04 实测的 arXiv 存量（2025-01 至 2026-09）。
+# ⚠️ 存量必须连口径一起记，否则复核会对不上。本仓库统一采用：
+#      系统级形态词 × 系统安全词 × 本节 queries
+#      并限定 cat:cs.CR OR cs.DC OR cs.OS OR cs.AR OR cs.NI
+#    该口径下总存量 260 篇。同一方向宽口径可虚高到 2091 篇（差 8 倍）。
+#    详见 MAINTENANCE.md「检索口径」一节。
+
+sections:
+  - id: "0"
+    title: "威胁模型与综述"
+    desc: >-
+      领域综述、SoK，以及「攻击面 × 信任边界」对照表。
+      本章负责回答「AI Infra 的安全边界和传统 Web/Cloud 有何本质不同」。
+    stock: 48
+    queries: ['abs:survey', 'abs:"systematic review"', 'abs:SoK', 'abs:taxonomy', 'abs:"threat model"']
+
+  - id: "1"
+    title: "AI State Plane 安全"
+    desc: >-
+      传统系统只有 Control Plane 与 Data Plane，LLM serving 多出了一层
+      「AI State Plane」—— KV、activation、embedding、expert routing、adapter、
+      speculative state 在机器之间流动。这些中间状态携带用户输入的信息，
+      却在多数 infra 设计中首先被当作 performance object 而非 tenant security boundary。
+    children:
+      - id: "1.1"
+        title: "KV / Prefix Cache 侧信道与泄露"
+        desc: "prefix 复用带来的 timing channel、跨租户 prompt 推断、cache 命中探测"
+        stock: 225
+        queries: ['abs:"KV cache"', 'abs:"KV-cache"', 'abs:"prefix cache"', 'abs:"prefix caching"', 'abs:"prompt caching"', 'abs:"cache sharing"']
+
+      - id: "1.2"
+        title: "Activation / Embedding 状态泄露"
+        desc: "中间激活、稀疏模式、hidden state 反演出原始输入"
+        stock: null
+        queries: ['abs:activation', 'abs:"hidden state"', 'abs:embedding', 'abs:"intermediate state"', 'abs:sparsity']
+
+      - id: "1.3"
+        title: "解耦推理与 KV 跨节点搬运"
+        desc: >-
+          prefill/decode 分离、RDMA 传输 KV、KV 的租户绑定与请求绑定、
+          stale KV、重放、误路由、跨租户 KV 注入
+        stock: 195
+        queries: ['abs:"prefill-decode"', 'abs:disaggregated AND abs:serving', 'abs:RDMA', 'abs:"multi-tenant"', 'abs:"KV transfer"']
+
+      - id: "1.4"
+        title: "缓存一致性与语义缓存"
+        desc: "prefix-cache hash 碰撞、image cache 碰撞、semantic cache 语义不一致"
+        stock: null
+        queries: ['abs:"semantic cache"', 'abs:"cache collision"', 'abs:"hash collision"', 'abs:"cache poisoning"']
+
+  - id: "2"
+    title: "Semantic-to-Resource 攻击面"
+    desc: >-
+      这是 AI Infra 最根本的独特性：**用户输入的语义会直接决定底层计算拓扑、
+      缓存状态、GPU 内存占用、调度行为与网络通信**。普通 Web/Cloud 里 request content
+      与底层 resource state 相对解耦；LLM Infra 里一段 prompt 可以同时改变 KV 分配、
+      prefix 命中、batch 组成、抢占行为、MoE 专家路由与 GPU 间通信。
+      于是攻击者可以通过完全合法的 API 输入去操纵系统状态。
+    children:
+      - id: "2.1"
+        title: "Scheduler 状态操纵与延迟 DoS"
+        desc: >-
+          不打 GPU FLOPS，而是打 LLM serving 的状态机 —— 用少量精心构造的请求
+          操纵输出长度、KV 占用、batch 生命周期，诱发反复抢占与重算
+        stock: 144
+        queries: ['abs:scheduler', 'abs:scheduling', 'abs:"denial-of-service"', 'abs:batching', 'abs:preemption', 'abs:"resource exhaustion"']
+
+      - id: "2.2"
+        title: "MoE 路由侧信道"
+        desc: "经 cache / TLB / performance counter / 时延 / 网络流量反推专家激活，进而还原输入语义"
+        stock: 32
+        queries: ['abs:"expert routing"', 'abs:"expert activation"', 'abs:"mixture-of-experts" AND abs:"side channel"']
+
+      - id: "2.3"
+        title: "MoE 路由操纵与 Safety 削弱"
+        desc: >-
+          safety 行为与部分专家强相关，操纵 routing 可增强越狱。
+          这一节要求论文的攻击手段必须作用于**路由机制本身**，
+          而不是把普通越狱换个 MoE 模型重跑一遍
+        stock: null
+        queries: ['abs:router AND abs:jailbreak', 'abs:"routing manipulation"', 'abs:"expert" AND abs:"safety alignment"']
+
+      - id: "2.4"
+        title: "专家并行通信与负载劫持"
+        desc: "EP all-to-all 流量热点、straggler 诱导、跨租户延迟干扰"
+        stock: null
+        queries: ['abs:"expert parallel"', 'abs:"all-to-all"', 'abs:straggler', 'abs:"load imbalance" AND abs:attack']
+
+  - id: "3"
+    title: "Infra 优化引发的 Safety 漂移"
+    desc: >-
+      传统 infra optimization 被理解为 performance / accuracy 的 tradeoff：
+      `maximize throughput subject to accuracy >= X`。
+      但对 aligned 模型，量化与缓存压缩可以在 perplexity 几乎不变的情况下显著
+      破坏 refusal 行为 —— 也就是说 **utility 守住了，safety 掉了**。
+      本章追问：Model Safety 是否应当成为 Infra Optimization 的 invariant，
+      即目标是否应改为 `subject to utility >= X AND safety >= Y`。
+    stock: 139
+    queries: ['abs:quantization', 'abs:"KV cache compression"', 'abs:"cache compression"', 'abs:pruning', 'abs:"speculative decoding"', 'abs:offloading']
+
+  - id: "4"
+    title: "训练侧完整性"
+    desc: >-
+      分布式训练有一个很特殊的安全属性：**local corruption can become
+      global model corruption** —— 单个 rank 产生的错误张量经 collective
+      传播到全部 rank 并写入 checkpoint。目前这块大部分工作停留在 reliability
+      视角（SDC 检测），往 security 推一步（把 accidental faulty worker 换成
+      malicious worker）后基本还是空白。
+    stock: 27
+    queries: ['abs:"silent data corruption"', 'abs:SDC', 'abs:Byzantine', 'abs:checkpoint AND abs:integrity', 'abs:"gradient" AND abs:tamper']
+
+  - id: "5"
+    title: "硬件与执行环境"
+    desc: "GPU 微架构侧信道、光学/物理探测、TEE 与机密计算、远程证明"
+    stock: 138
+    queries: ['abs:GPU AND abs:"side channel"', 'abs:"performance counter"', 'abs:TLB', 'abs:microarchitectural', 'abs:TEE', 'abs:enclave', 'abs:"confidential computing"']
+
+  - id: "6"
+    title: "防御与系统机制"
+    desc: >-
+      按防御在系统栈上的介入层次组织：cache 隔离（如 cache salt）、
+      信息流追踪、隔离调度、确定性执行、审计与可观测性
+    stock: 94
+    queries: ['abs:isolation', 'abs:"information flow"', 'abs:defense AND abs:serving', 'abs:mitigation AND abs:"KV cache"', 'abs:attestation']
+
+  - id: "7"
+    title: "工程侧安全（非 arXiv 来源）"
+    desc: >-
+      本章以 CVE、厂商安全公告、框架 issue/PR、fuzzing 工具为主。
+      原因：serving 框架的真实漏洞走的是 CVE 与 GitHub advisory 渠道而非 arXiv，
+      而学术清单普遍不收这类条目 —— 这是本仓库最容易形成差异化的部分。
+      沿用 GUI Agent 安全那轮的教训：凡高度依赖非 arXiv 来源的章节必须显式规划
+      检索流程，否则会整段缺失。周更时本章需单独走 CVE / advisory 流程，
+      不要因为 arXiv 无结果就跳过。
+    stock: 0
+    queries: []
+
+# 信任边界（交叉标签，不作为一级章节 —— 与竞品扁平标签的核心区别）
+#
+# 同一个攻击面在不同信任边界下的严重性完全不同：KV 泄露在单租户自部署里几乎无害，
+# 在多租户 serving 里是重大隐私事故。因此每篇论文都要标注它跨越了哪层边界。
+boundaries:
+  - id: cross-tenant
+    title: "跨租户"
+    desc: "同一 serving 实例上不同用户/组织之间"
+  - id: cross-request
+    title: "跨请求"
+    desc: "同一租户不同请求之间，含会话隔离失效"
+  - id: host-device
+    title: "主机-设备"
+    desc: "CPU 与 GPU/加速器之间，含 PCIe、驱动、显存"
+  - id: inter-node
+    title: "节点间"
+    desc: "多机之间，含 RDMA、collective、EP all-to-all"
+  - id: supply-chain
+    title: "供应链"
+    desc: "模型权重、框架依赖、编译工具链、镜像"
+  - id: model-internal
+    title: "模型内部"
+    desc: "不跨越部署边界，但改变了模型自身的安全行为（如量化导致的对齐漂移）"
