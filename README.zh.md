@@ -43,12 +43,12 @@ AI Infra 最大的特殊性是：**用户输入的语义，会直接决定底层
 | 攻击面 \ 信任边界 | 跨租户 | 跨请求 | 主机-设备 | 节点间 | 供应链 | 模型内部 |
 |---|---|---|---|---|---|---|
 | **0 威胁模型与综述** | · | · | 1 | · | · | 1 |
-| **1 AI State Plane 安全** | 21 | 7 | 5 | 5 | 2 | 2 |
+| **1 AI State Plane 安全** | 23 | 7 | 6 | 5 | 2 | 2 |
 | **2 Semantic-to-Resource 攻击面** | 5 | · | 1 | 1 | · | 3 |
 | **3 Infra 优化引发的 Safety 漂移** | 1 | · | · | · | 2 | 8 |
 | **4 训练侧完整性** | · | · | · | 2 | 1 | · |
 | **5 硬件与执行环境** | · | · | 3 | · | 1 | · |
-| **6 防御与系统机制** | 2 | 1 | 4 | 1 | · | 2 |
+| **6 防御与系统机制** | 2 | 1 | 4 | 1 | 1 | 3 |
 
 ## 目录
 
@@ -89,6 +89,11 @@ AI Infra 最大的特殊性是：**用户输入的语义，会直接决定底层
 ### 1.1 KV / Prefix Cache 侧信道与泄露
 
 *prefix 复用带来的 timing channel、跨租户 prompt 推断、cache 命中探测*
+
+#### Characterizing Contention-Induced Reliability Collapse in KV-Cache Timing Side Channels for Multi-Tenant LLM Serving (Contention Collapse) (2026-09)
+- **简介**：此前工作已证明 KV cache prefix 复用会泄露某个 prefix 是否已被缓存，但这类攻击在真实多租户竞争下还剩多少可靠性一直缺乏刻画。本文在真实 vLLM 服务上做了七组实验（NVIDIA GB10 跑 DeepSeek-R1-Distill-Llama-8B）：无竞争 worker 时平均 Cohen's d 为 0.7789，加入两个 worker 后骤降至 0.2109（t=8.412），AUROC 也从空载 0.650 掉到约 61% 重叠时的 0.531。120 次稀疏重叠实验把断点定位在 tau=0（95% CI [0.000,0.113]），说明这是「空载 / 负载」两种状态的切换而非某个物理阈值；并发深度方差是 effect size 最强的相关因素（r=-0.416）。这篇的价值在于给 KV timing 侧信道的实际威胁度加上了负载这一维度。
+- **信任边界**：跨租户
+- **arXiv**：[2609.06853](https://arxiv.org/abs/2609.06853)
 
 #### Uncovering and Understanding Hidden Dependencies in the LLM API Reseller Ecosystem via Prefix-Cache Side Channels (Reseller Probing) (2026-08)
 - **简介**：LLM API 转售商已成为访问模型服务的重要一层，但多级转售让供应链变得不透明： 用户的请求可能经过若干未披露的上游。本文把 prefix-cache 侧信道用作探针， 通过构造探测 prompt 并观测缓存命中特征，反推出转售商背后的真实上游依赖关系。 这是一个把 infra 侧信道用于生态测绘的有趣转向 —— 侧信道不止能偷 prompt， 还能揭示服务提供方刻意隐藏的拓扑结构，对合规与数据流向审计都有直接意义。
@@ -163,6 +168,11 @@ AI Infra 最大的特殊性是：**用户输入的语义，会直接决定底层
 ### 1.2 Activation / Embedding 状态泄露
 
 *中间激活、稀疏模式、hidden state 反演出原始输入*
+
+#### Detokenization Leaks: Reconstructing Local LLM Outputs From Cache Traces (Detokenization Leaks) (2026-09)
+- **简介**：提出一种通过观测 detokenization 阶段的 CPU cache 活动、重建本地部署 LLM 生成文本的攻击。与此前依赖共享数据内存、CPU offloading 或 MoE 架构等特定部署假设的工作不同，本文的目标是**默认推理流水线中都有的 detokenizer**：先用 Flush+Reload 监视共享的 tokenizer 代码以判定解码时刻，据此在正确时机发起 Prime+Probe 隔离出与 token 相关的 cache 活动，再用聚类加语言模型的流水线从噪声观测中还原文本。作者在多个数据集、硬件平台、推理框架与模型家族上验证，能从真实本地部署（含 agentic 系统）中还原语义准确的输出。攻击面之所以危险，是因为最常用的几个 tokenizer 实现都受影响，且被广泛嵌入各类本地 LLM 产品。
+- **信任边界**：跨租户、主机-设备
+- **arXiv**：[2609.06674](https://arxiv.org/abs/2609.06674)
 
 #### SparSEEty: Extracting Tokens from Sparsity-Exploiting LLM Serving Systems via Deterministic Side Channels (SparSEEty) (2026-08)
 - **简介**：现代 LLM 存在激活稀疏性，只有部分神经元会被给定 token 激活，serving 系统 普遍利用这一性质做优化。本文指出这种优化把模型的内部激活模式暴露成了 可观测的确定性侧信道：由于稀疏模式与输入 token 强相关且执行路径确定， 攻击者可据此反推出被处理的 token。这是「性能优化把模型内部状态外化」 这一类问题的典型案例，与 KV cache 侧信道同源但作用在激活层面。
@@ -393,6 +403,11 @@ AI Infra 最大的特殊性是：**用户输入的语义，会直接决定底层
 ## 6 防御与系统机制
 
 *按防御在系统栈上的介入层次组织：cache 隔离（如 cache salt）、 信息流追踪、隔离调度、确定性执行、审计与可观测性*
+
+#### SpecGuard: Inference-Time Backdoor Detection For Free (SpecGuard) (2026-09)
+- **简介**：从第三方微调、共享或下载来的模型可能携带隐藏后门 —— 在良性输入上表现正常，遇到秘密 trigger 就切换到攻击者预期行为，因此对频繁更新的部署来说运行时监控很重要。但现有推理期检测器要么依赖对 trigger 形态的假设（对隐蔽攻击会失效），要么需要额外的模型计算（输入扰动或多跑一遍生成）。SpecGuard 的思路是复用 serving 栈里已有的投机解码，做到零额外模型计算开销：draft-verify 过程本身就暴露了可用信号 —— 后门被触发时 target 模型会偏向攻击者行为，而干净的 draft 模型不会，于是接受/拒绝模式本身就成了检测器。这是把 infra 既有组件转为防御设施的典型例子。
+- **信任边界**：供应链、模型内部
+- **arXiv**：[2609.11799](https://arxiv.org/abs/2609.11799)
 
 #### SEAL: Reinforcing Global Safety in Mixture-of-Experts through Shared Expert ALignment (SEAL) (2026-09)
 - **简介**：针对 MoE 安全对齐局部化的问题（即 GateBreaker 揭示的少数专家承担全部安全职责）， 提出通过共享专家对齐来强化全局安全性。思路是不再把 safety 押在个别专家上， 而是让承担安全职责的能力在专家间共享，从而抬高针对性绕过的成本。 这是本仓库防御章节中直接回应 MoE 路由攻击的工作， 建议与第 2.3 节的三篇攻击工作对照阅读。
